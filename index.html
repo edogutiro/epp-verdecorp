@@ -308,6 +308,7 @@
               <option value="">Seleccionar bodega...</option>
               <option value="BULNES (1+3)">BULNES (1+3)</option>
               <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+              <option value="ECOCORP">ECOCORP</option>
             </select>
             <span class="text-xs text-gray-500">Ingresa el conteo real en la columna "Conteo Físico"</span>
           </div>
@@ -513,6 +514,7 @@
                 <option value="">Seleccionar bodega...</option>
                 <option value="BULNES (1+3)">BULNES (1+3)</option>
                 <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+                <option value="ECOCORP">ECOCORP</option>
               </select>
             </div>
             <div>
@@ -793,7 +795,7 @@
 let db, auth;
 const S = {
   user: null, userDoc: null, rol: null, adminOpen: false,
-  stock: { 'BULNES (1+3)': [], 'ROMERAL (Unificada)': [] },
+  stock: { 'BULNES (1+3)': [], 'ROMERAL (Unificada)': [], 'ECOCORP': [] },
   stockDocs: {},      // item key → Firestore doc id
   workers: [],
   workerDocs: {},     // index → Firestore doc id
@@ -1118,12 +1120,14 @@ async function importExcel(inp){
     const stockBulnes   = parseStockSheet(wb, 'BULNES (1+3)');
     bar.style.width='25%'; msg.textContent='Parseando stock ROMERAL...';
     const stockRomeral  = parseStockSheet(wb, 'ROMERAL (Unificada)');
+    bar.style.width='32%'; msg.textContent='Parseando stock ECOCORP...';
+    const stockEcocorp  = parseStockSheet(wb, 'ECOCORP');
     bar.style.width='35%'; msg.textContent='Parseando Matriz EPP...';
     const workers       = parseMatriz(wb);
     bar.style.width='42%'; msg.textContent='Parseando hoja ENTREGAS...';
     const entregasMap   = parseEntregas(wb);
 
-    const allItems = [...stockBulnes, ...stockRomeral];
+    const allItems = [...stockBulnes, ...stockRomeral, ...stockEcocorp];
     bar.style.width='50%'; msg.textContent=`Subiendo ${allItems.length} artículos...`;
 
     // Delete existing stock docs
@@ -2299,6 +2303,7 @@ function descargarPlanillaComprar(){
     if(!sede) return false;
     if(bodega==='BULNES (1+3)') return sede.startsWith('BULNES');
     if(bodega.includes('ROMERAL')) return sede.includes('ROMERAL');
+    if(bodega==='ECOCORP') return sede==='ECOCORP' || sede.startsWith('ECOCORP');
     return sede===bodega;
   }
   const wb=XLSX.utils.book_new();
