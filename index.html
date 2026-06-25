@@ -980,41 +980,6 @@ function loadApp(){
   setupListeners();
 }
 
-function switchTab(tabId){
-  ['tabE','tabI','tabH'].forEach(id=>{
-    document.getElementById(id).classList.remove('active');
-    document.getElementById('btnTab'+id.slice(3)).classList.remove('tab-active');
-  });
-  document.getElementById(tabId).classList.add('active');
-  document.getElementById('btnTab'+tabId.slice(3)).classList.add('tab-active');
-}
-
-function toggleAdmin(){
-  const panel=document.getElementById('adminPanel');
-  const btn=document.getElementById('adminToggleBtn');
-  S.adminOpen=!S.adminOpen;
-  if(S.adminOpen){
-    panel.classList.remove('hidden');
-    btn.textContent='✖ Cerrar Admin';
-  } else {
-    panel.classList.add('hidden');
-    btn.textContent='🔐 Panel Admin';
-  }
-}
-
-function toggleAcc(id){
-  const body=document.getElementById(id);
-  const icon=document.getElementById(id+'Icon');
-  const isOpen=body.classList.contains('open');
-  // Cerrar todos los accordions abiertos
-  document.querySelectorAll('.acc-body.open').forEach(el=>el.classList.remove('open'));
-  document.querySelectorAll('[id$="Icon"]').forEach(el=>el.style.transform='');
-  if(!isOpen){
-    body.classList.add('open');
-    if(icon) icon.style.transform='rotate(180deg)';
-  }
-}
-
 // ══════════════════════════════════════════════════════
 // FIRESTORE LISTENERS (TIEMPO REAL)
 // ══════════════════════════════════════════════════════
@@ -2223,6 +2188,129 @@ function renderDiag(){
       }).join('')}
     </tr>`).join('')
   }</tbody></table>`;
+}
+
+// ══════════════════════════════════════════════════════
+// INVENTARIO MENSUAL
+// ══════════════════════════════════════════════════════
+function toggleInventario(){
+  const panel=document.getElementById('inventarioPanel');
+  const btn=document.getElementById('inventarioToggleBtn');
+  const isHidden=panel.classList.contains('hidden');
+  if(isHidden){
+    if(S.adminOpen){
+      document.getElementById('adminPanel').classList.add('hidden');
+      document.getElementById('adminToggleBtn').textContent='🔐 Panel Admin';
+      S.adminOpen=false;
+    }
+    panel.classList.remove('hidden');
+    btn.textContent='✖ Cerrar Inventario';
+    renderInventario();
+  } else {
+    panel.classList.add('hidden');
+    btn.textContent='📦 Inventario';
+  }
+}
+
+function renderInventario(){
+  const bodega=document.getElementById('invBodega').value;
+  const tbody=document.getElementById('invBody');
+  const empty=document.getElementById('invEmpty');
+  const wrap=document.getElementById('invTablaWrap');
+  const actions=document.getElementById('invActions');
+  if(!bodega){
+    tbody.innerHTML='';
+    wrap.classList.add('hidden');
+    empty.classList.remove('hidden');
+    actions.classList.add('hidden');
+    return;
+  }
+  const items=S.stock[bodega]||[];
+  empty.classList.add('hidden');
+  wrap.classList.remove('hidden');
+  actions.classList.remove('hidden');
+  tbody.innerHTML=items.map((it,i)=>`
+    <tr class="border-t border-gray-100 hover:bg-gray-50">
+      <td class="px-4 py-2 text-gray-800">${it.item||'—'}</td>
+      <td class="px-4 py-2 text-gray-500">${it.talla||'—'}</td>
+      <td class="px-4 py-2 text-center font-bold text-vc-700">${it.stock??0}</td>
+      <td class="px-4 py-2 text-center">
+        <input type="number" min="0" value="${it.stock??0}" data-idx="${i}"
+          class="input-base w-20 text-center py-1" oninput="onInvInput(this)">
+      </td>
+      <td class="px-4 py-2 text-center font-bold text-gray-400" id="invDif${i}">0</td>
+    </tr>`).join('');
+}
+
+function onInvInput(el){
+  const i=parseInt(el.dataset.idx);
+  const bodega=document.getElementById('invBodega').value;
+  const it=(S.stock[bodega]||[])[i];
+  if(!it) return;
+  const conteo=parseInt(el.value)||0;
+  const dif=conteo-(it.stock??0);
+  const cell=document.getElementById('invDif'+i);
+  cell.textContent=(dif>=0?'+':'')+dif;
+  cell.className='px-4 py-2 text-center font-bold '+(dif>0?'text-green-600':dif<0?'text-red-500':'text-gray-400');
+}
+
+async function guardarInventario(){
+  const bodega=document.getElementById('invBodega').value;
+  if(!bodega){ showToast('Selecciona una bodega','error'); return; }
+  const items=S.stock[bodega]||[];
+  const inputs=document.querySelectorAll('#invBody input[data-idx]');
+  const batch=db.batch();
+  let changes=0;
+  const promises=[];
+  inputs.forEach(inp=>{
+    const i=parseInt(inp.dataset.idx);
+    const it=items[i];
+    if(!it||!it._id) return;
+    const conteo=parseInt(inp.value)||0;
+    if(conteo!==(it.stock??0)){
+      batch.update(db.collection('stock').doc(it._id),{stock:conteo});
+      promises.push(db.collection('historial').add({
+        tipo:'AJUSTE INVENTARIO',
+        item:it.item, talla:it.talla||'—', bodega,
+        trabajador:S.userDoc?.nombre||S.user?.email||'—',
+        marca:'—', recambio:false,
+        cantidad:conteo-(it.stock??0),
+        fecha:firebase.firestore.FieldValue.serverTimestamp(),
+        uid:S.user?.uid||'', email:S.user?.email||'', firma:null
+      }));
+      changes++;
+    }
+  });
+  if(changes===0){ showToast('Sin cambios que guardar','info'); return; }
+  await Promise.all([batch.commit(),...promises]);
+  showToast(`Inventario guardado · ${changes} cambio${changes>1?'s':''}`, 'ok');
+}
+
+function descargarPlanillaComprar(){
+  if(S.rol!=='admin'){ showToast('Solo admins pueden descargar esta planilla','error'); return; }
+  const wb=XLSX.utils.book_new();
+  Object.keys(S.stock).forEach(bodega=>{
+    const items=S.stock[bodega]||[];
+    const workersBodega=S.workers.filter(w=>!w._esOtro&&(w.sede===bodega||!w.sede));
+    const header=['Artículo','Talla','Stock Actual','Trabajadores','Entregas/año','Demanda Anual','Stock Crítico','A Comprar'];
+    const rows=items.map(it=>{
+      const stockAct=it.stock??0;
+      const wCount=workersBodega.filter(w=>w.tallas&&w.tallas[it.item]!=null).length;
+      let entPerYear=0;
+      Object.values(S.entregas).forEach(itemMap=>{
+        const v=itemMap[it.item]||itemMap[norm(it.item)];
+        if(v) entPerYear=Math.max(entPerYear,v);
+      });
+      const demanda=wCount*entPerYear;
+      const critico=Math.floor(demanda/2)+1;
+      const aComprar=Math.max(0,critico-stockAct);
+      return [it.item,it.talla||'—',stockAct,wCount,entPerYear,demanda,critico,aComprar];
+    });
+    const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
+    ws['!cols']=[{wch:30},{wch:8},{wch:12},{wch:14},{wch:13},{wch:14},{wch:13},{wch:11}];
+    XLSX.utils.book_append_sheet(wb,ws,bodega.slice(0,31));
+  });
+  XLSX.writeFile(wb,'Planilla_A_Comprar_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 // ══════════════════════════════════════════════════════
