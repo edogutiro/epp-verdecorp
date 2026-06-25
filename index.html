@@ -988,7 +988,7 @@ function loadApp(){
 function setupListeners(){
   // Stock listener
   const unsubStock = db.collection('stock').onSnapshot(snap=>{
-    S.stock = { 'BULNES (1+3)':[], 'ROMERAL (Unificada)':[] };
+    S.stock = { 'BULNES (1+3)':[], 'ROMERAL (Unificada)':[], 'ECOCORP':[] };
     S.stockDocs = {};
     snap.forEach(doc=>{
       const d=doc.data(); d._id=doc.id;
