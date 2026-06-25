@@ -2293,26 +2293,36 @@ async function guardarInventario(){
 
 function descargarPlanillaComprar(){
   if(S.rol!=='admin'){ showToast('Solo admins pueden descargar esta planilla','error'); return; }
+  // Mapeo: bodega → sedes que la componen
+  function sedeEnBodega(sede, bodega){
+    if(!sede) return false;
+    if(bodega==='BULNES (1+3)') return sede.startsWith('BULNES');
+    if(bodega.includes('ROMERAL')) return sede.includes('ROMERAL');
+    return sede===bodega;
+  }
   const wb=XLSX.utils.book_new();
   Object.keys(S.stock).forEach(bodega=>{
     const items=S.stock[bodega]||[];
-    const workersBodega=S.workers.filter(w=>!w._esOtro&&(w.sede===bodega||!w.sede));
-    const header=['Artículo','Talla','Stock Actual','Trabajadores','Entregas/año','Demanda Anual','Stock Crítico','A Comprar'];
+    const workersBodega=S.workers.filter(w=>!w._esOtro && sedeEnBodega(w.sede, bodega));
+    const header=['Artículo','Talla','Stock Actual','N° Trabajadores','Demanda Anual','Stock Crítico','A Comprar'];
     const rows=items.map(it=>{
       const stockAct=it.stock??0;
-      const wCount=workersBodega.filter(w=>w.tallas&&w.tallas[it.item]!=null).length;
-      let entPerYear=0;
-      Object.values(S.entregas).forEach(itemMap=>{
-        const v=itemMap[it.item]||itemMap[norm(it.item)];
-        if(v) entPerYear=Math.max(entPerYear,v);
+      // Demanda = suma de entregas/año de cada trabajador que usa este ítem
+      let demanda=0;
+      workersBodega.forEach(w=>{
+        if(w.tallas && w.tallas[it.item]!=null){
+          const cargoEnt=S.entregas[w.cargo]||S.entregas[norm(w.cargo)]||{};
+          const ent=cargoEnt[it.item]||cargoEnt[norm(it.item)]||0;
+          demanda+=ent;
+        }
       });
-      const demanda=wCount*entPerYear;
+      const wCount=workersBodega.filter(w=>w.tallas&&w.tallas[it.item]!=null).length;
       const critico=Math.floor(demanda/2)+1;
       const aComprar=Math.max(0,critico-stockAct);
-      return [it.item,it.talla||'—',stockAct,wCount,entPerYear,demanda,critico,aComprar];
+      return [it.item,it.talla||'—',stockAct,wCount,demanda,critico,aComprar];
     });
     const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
-    ws['!cols']=[{wch:30},{wch:8},{wch:12},{wch:14},{wch:13},{wch:14},{wch:13},{wch:11}];
+    ws['!cols']=[{wch:30},{wch:8},{wch:12},{wch:15},{wch:14},{wch:13},{wch:11}];
     XLSX.utils.book_append_sheet(wb,ws,bodega.slice(0,31));
   });
   XLSX.writeFile(wb,'Planilla_A_Comprar_'+new Date().toISOString().slice(0,10)+'.xlsx');
