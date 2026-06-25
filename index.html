@@ -270,6 +270,11 @@
           <p class="text-xs text-gray-400 leading-none mt-0.5" id="userRol">—</p>
         </div>
       </div>
+      <!-- Inventario (todos los roles) -->
+      <button id="inventarioToggleBtn" onclick="toggleInventario()"
+        class="hidden btn-primary bg-amber-600 hover:bg-amber-700 text-white text-xs">
+        📦 Inventario
+      </button>
       <!-- Admin toggle -->
       <button id="adminToggleBtn" onclick="toggleAdmin()"
         class="hidden btn-primary bg-gray-900 hover:bg-gray-700 text-white text-xs">
@@ -289,6 +294,48 @@
   </header>
 
   <div class="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+
+    <!-- PANEL INVENTARIO -->
+    <section id="inventarioPanel" class="hidden">
+      <div class="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-amber-100 bg-amber-50 flex items-center justify-between">
+          <span class="text-amber-800 font-bold text-sm flex items-center gap-2">📦 Inventario Mensual</span>
+          <span class="text-xs text-amber-600">Ingresa el conteo físico real para actualizar el stock</span>
+        </div>
+        <div class="p-4 space-y-4">
+          <div class="flex gap-3 flex-wrap items-center">
+            <select id="invBodega" onchange="renderInventario()" class="input-base w-56">
+              <option value="">Seleccionar bodega...</option>
+              <option value="BULNES (1+3)">BULNES (1+3)</option>
+              <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+            </select>
+            <span class="text-xs text-gray-500">Ingresa el conteo real en la columna "Conteo Físico"</span>
+          </div>
+          <div id="invTablaWrap" class="hidden overflow-auto rounded-xl border border-gray-200">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Artículo</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Talla</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stock App</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-amber-600 uppercase tracking-wide">Conteo Físico</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Diferencia</th>
+                </tr>
+              </thead>
+              <tbody id="invBody"></tbody>
+            </table>
+          </div>
+          <div id="invEmpty" class="hidden text-center py-8 text-gray-400 text-sm">Selecciona una bodega para ver el inventario</div>
+          <div id="invActions" class="hidden flex items-center gap-3">
+            <button onclick="guardarInventario()"
+              class="btn-primary bg-amber-600 hover:bg-amber-700 text-white">
+              💾 Guardar Inventario
+            </button>
+            <span class="text-xs text-gray-400">Solo se actualizarán los artículos donde ingresaste un conteo</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- PANEL ADMIN -->
     <section id="adminPanel" class="hidden">
@@ -391,6 +438,19 @@
             <button onclick="exportarExcel()"
               class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs flex-shrink-0">
               ⬇ Descargar Excel
+            </button>
+          </div>
+
+          <!-- Planilla A Comprar -->
+          <div class="bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-white">🛒 Planilla "A Comprar"</p>
+              <p class="text-xs text-gray-400 mt-0.5">Calcula cuánto comprar por bodega según demanda, trabajadores y stock actual.</p>
+              <p class="text-xs text-gray-500 mt-0.5">Stock Crítico = (Trab × Entregas/año) ÷ 2 + 1 &nbsp;·&nbsp; A Comprar = máx(0, Crítico − Stock)</p>
+            </div>
+            <button onclick="descargarPlanillaComprar()"
+              class="btn-primary bg-emerald-700 hover:bg-emerald-600 text-white text-xs flex-shrink-0">
+              ⬇ Descargar Planilla
             </button>
           </div>
 
@@ -907,7 +967,9 @@ function loadApp(){
   document.getElementById('userRol').textContent  = S.rol==='admin'?'Administrador':'Operativo';
   document.getElementById('userInitial').textContent = nombre.charAt(0).toUpperCase();
 
-  // Botón admin solo si es admin
+  // Botón inventario para todos los roles
+  document.getElementById('inventarioToggleBtn').classList.remove('hidden');
+  // Botones solo admin
   if(S.rol==='admin'){
     document.getElementById('adminToggleBtn').classList.remove('hidden');
     document.getElementById('clearHistBtn').classList.remove('hidden');
@@ -2022,8 +2084,9 @@ function renderHistorial(){
     const ds=fec.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
     const ts=fec.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
     const isEntrega=h.tipo==='ENTREGA';
+    const isAjuste=h.tipo==='AJUSTE INVENTARIO';
     const tieneFirma=!!h.firma;
-    // Firma column: for entregas show ✍️ (unsigned) or ✅ (signed); for entradas show —
+    // Firma column: for entregas show ✍️ (unsigned) or ✅ (signed); for others show —
     let firmaCell='<td class="px-4 py-2.5 text-center text-gray-300 text-xs">—</td>';
     if(isEntrega){
       if(tieneFirma){
@@ -2045,16 +2108,16 @@ function renderHistorial(){
       <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${ds}<br><span class="text-gray-400">${ts}</span></td>
       <td class="px-4 py-2.5">
         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold
-          ${isEntrega?'bg-vc-100 text-vc-800':'bg-blue-100 text-blue-800'}">
-          ${isEntrega?'📦 Entrega':'🚚 Entrada'}
+          ${isEntrega?'bg-vc-100 text-vc-800':isAjuste?'bg-amber-100 text-amber-800':'bg-blue-100 text-blue-800'}">
+          ${isEntrega?'📦 Entrega':isAjuste?'📋 Inventario':'🚚 Entrada'}
         </span>
       </td>
       <td class="px-4 py-2.5 font-semibold text-sm">${h.item||'—'}</td>
       <td class="px-4 py-2.5 text-gray-500 text-sm">${h.talla||'—'}</td>
       <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${h.bodega||'—'}</td>
       <td class="px-4 py-2.5 text-sm">${h.trabajador||'—'}</td>
-      <td class="px-4 py-2.5 text-center font-bold ${isEntrega?'text-vc-700':'text-blue-700'}">
-        ${isEntrega?'-':'+'}${h.cantidad||0}
+      <td class="px-4 py-2.5 text-center font-bold ${isEntrega?'text-vc-700':isAjuste?(h.cantidad>=0?'text-blue-600':'text-red-600'):'text-blue-700'}">
+        ${isEntrega?'-':(h.cantidad>0?'+':'')}${h.cantidad||0}
       </td>
       <td class="px-4 py-2.5 text-xs text-gray-400">${h.email||'—'}</td>
       ${firmaCell}
@@ -2135,6 +2198,7 @@ function renderDiag(){
   const selItem=document.getElementById('diagItem');
   const allItems=new Set();
   S.workers.forEach(w=>{ if(w.tallas) Object.keys(w.tallas).forEach(k=>allItems.add(k)); });
+  
   const sortedItems=[...allItems].sort();
   const prevVal=selItem?.value||'';
   if(selItem){ selItem.innerHTML='<option value="">— Todos los EPP —</option>'+sortedItems.map(k=>`<option value="${k}" ${k===prevVal?'selected':''}>${k}</option>`).join(''); }
@@ -2153,7 +2217,9 @@ function renderDiag(){
     workers.map(w=>`<tr class="border-t border-gray-700 hover:bg-gray-700">
       <td class="px-3 py-1.5 font-semibold text-white whitespace-nowrap">${w.nombre}</td>
       <td class="px-3 py-1.5 text-gray-400 whitespace-nowrap">${w.sede||'—'}</td>
-
+      ${cols.map(col=>{
+        const v=w.tallas&&w.tallas[col]?w.tallas[col]:'';
+        return `<td class="px-2 py-1.5 text-center ${v&&v!=='-'?'text-vc-400 font-bold':'text-gray-600'}">${v||'—'}</td>`;
       }).join('')}
     </tr>`).join('')
   }</tbody></table>`;
@@ -2175,8 +2241,12 @@ function toggleAdmin(){
   const panel=document.getElementById('adminPanel');
   const btn=document.getElementById('adminToggleBtn');
   S.adminOpen=!S.adminOpen;
-  if(S.adminOpen){ panel.classList.remove('hidden'); btn.textContent='✖ Cerrar Admin'; }
-  else { panel.classList.add('hidden'); btn.textContent='🔐 Panel Admin'; }
+  if(S.adminOpen){
+    // Cerrar inventario si está abierto
+    document.getElementById('inventarioPanel').classList.add('hidden');
+    document.getElementById('inventarioToggleBtn').textContent='📦 Inventario';
+    panel.classList.remove('hidden'); btn.textContent='✖ Cerrar Admin';
+  } else { panel.classList.add('hidden'); btn.textContent='🔐 Panel Admin'; }
 }
 
 function toggleAcc(id){
@@ -2188,9 +2258,9 @@ function toggleAcc(id){
   if(!isOpen){ body.classList.add('open'); if(icon) icon.style.transform='rotate(180deg)'; }
 }
 
-// ══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════
 // BOOTSTRAP — se ejecuta al cargar la página
-// ══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════
 (function init(){
   const cfg = {
     apiKey: "AIzaSyD-CF02A6BpO8oX6mUANWhvg_uZpWdyNLY",
