@@ -1194,6 +1194,7 @@ function parseStockSheet(wb, bodega){
       cargos:g(r,3)?String(g(r,3)).trim():'',
       demanda:Number(g(r,4))||0,
       stockActual:Number(g(r,5))||0,
+      stockCritico:Number(g(r,6))||0,
       orden:items.length,
       bodega
     });
@@ -2238,9 +2239,9 @@ function renderInventario(){
     <tr class="border-t border-gray-100 hover:bg-gray-50">
       <td class="px-4 py-2 text-gray-800">${it.item||'—'}</td>
       <td class="px-4 py-2 text-gray-500">${it.talla||'—'}</td>
-      <td class="px-4 py-2 text-center font-bold text-vc-700">${it.stock??0}</td>
+      <td class="px-4 py-2 text-center font-bold text-vc-700">${it.stockActual??0}</td>
       <td class="px-4 py-2 text-center">
-        <input type="number" min="0" value="${it.stock??0}" data-idx="${i}"
+        <input type="number" min="0" value="${it.stockActual??0}" data-idx="${i}"
           class="input-base w-20 text-center py-1" oninput="onInvInput(this)">
       </td>
       <td class="px-4 py-2 text-center font-bold text-gray-400" id="invDif${i}">0</td>
@@ -2253,7 +2254,7 @@ function onInvInput(el){
   const it=(S.stock[bodega]||[])[i];
   if(!it) return;
   const conteo=parseInt(el.value)||0;
-  const dif=conteo-(it.stock??0);
+  const dif=conteo-(it.stockActual??0);
   const cell=document.getElementById('invDif'+i);
   cell.textContent=(dif>=0?'+':'')+dif;
   cell.className='px-4 py-2 text-center font-bold '+(dif>0?'text-green-600':dif<0?'text-red-500':'text-gray-400');
@@ -2272,14 +2273,14 @@ async function guardarInventario(){
     const it=items[i];
     if(!it||!it._id) return;
     const conteo=parseInt(inp.value)||0;
-    if(conteo!==(it.stock??0)){
-      batch.update(db.collection('stock').doc(it._id),{stock:conteo});
+    if(conteo!==(it.stockActual??0)){
+      batch.update(db.collection('stock').doc(it._id),{stockActual:conteo});
       promises.push(db.collection('historial').add({
         tipo:'AJUSTE INVENTARIO',
         item:it.item, talla:it.talla||'—', bodega,
         trabajador:S.userDoc?.nombre||S.user?.email||'—',
         marca:'—', recambio:false,
-        cantidad:conteo-(it.stock??0),
+        cantidad:conteo-(it.stockActual??0),
         fecha:firebase.firestore.FieldValue.serverTimestamp(),
         uid:S.user?.uid||'', email:S.user?.email||'', firma:null
       }));
@@ -2304,25 +2305,15 @@ function descargarPlanillaComprar(){
   Object.keys(S.stock).forEach(bodega=>{
     const items=S.stock[bodega]||[];
     const workersBodega=S.workers.filter(w=>!w._esOtro && sedeEnBodega(w.sede, bodega));
-    const header=['Artículo','Talla','Stock Actual','N° Trabajadores','Demanda Anual','Stock Crítico','A Comprar'];
+    const header=['Artículo','Talla','Stock Actual','Stock Crítico','A Comprar'];
     const rows=items.map(it=>{
-      const stockAct=it.stock??0;
-      // Demanda = suma de entregas/año de cada trabajador que usa este ítem
-      let demanda=0;
-      workersBodega.forEach(w=>{
-        if(w.tallas && w.tallas[it.item]!=null){
-          const cargoEnt=S.entregas[w.cargo]||S.entregas[norm(w.cargo)]||{};
-          const ent=cargoEnt[it.item]||cargoEnt[norm(it.item)]||0;
-          demanda+=ent;
-        }
-      });
-      const wCount=workersBodega.filter(w=>w.tallas&&w.tallas[it.item]!=null).length;
-      const critico=Math.floor(demanda/2)+1;
+      const stockAct=it.stockActual??0;
+      const critico=it.stockCritico??0;
       const aComprar=Math.max(0,critico-stockAct);
-      return [it.item,it.talla||'—',stockAct,wCount,demanda,critico,aComprar];
+      return [it.item,it.talla||'—',stockAct,critico,aComprar];
     });
     const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
-    ws['!cols']=[{wch:30},{wch:8},{wch:12},{wch:15},{wch:14},{wch:13},{wch:11}];
+    ws['!cols']=[{wch:30},{wch:8},{wch:14},{wch:14},{wch:12}];
     XLSX.utils.book_append_sheet(wb,ws,bodega.slice(0,31));
   });
   XLSX.writeFile(wb,'Planilla_A_Comprar_'+new Date().toISOString().slice(0,10)+'.xlsx');
