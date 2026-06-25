@@ -2318,27 +2318,24 @@ function descargarPlanillaComprar(){
     const header=['Artículo','Talla','Stock Actual','Stock Crítico','A Comprar'];
     const rows=items.map(it=>{
       const stockAct=it.stockActual??0;
-      // Preferir stockCritico guardado; si no existe, calcular con workers
-      let critico=it.stockCritico||0;
-      if(!critico){
-        let demanda=0;
-        const tallaStr=String(it.talla||'-');
-        workersBodega.forEach(w=>{
-          if(!w.tallas||w.tallas[it.item]==null) return;
-          // solo contar si la talla del trabajador coincide con la del stock
-          if(String(w.tallas[it.item])!==tallaStr) return;
-          const cargoNorm=norm(w.cargo||'');
-          let ent=0;
-          for(const [cargo,itemMap] of Object.entries(S.entregas)){
-            if(norm(cargo)===cargoNorm){
-              ent=itemMap[it.item]||itemMap[norm(it.item)]||0;
-              if(ent) break;
-            }
+      // Calcular demanda dinámicamente desde workers reales (más preciso que el Excel)
+      let demanda=0;
+      const tallaStr=String(it.talla||'-');
+      workersBodega.forEach(w=>{
+        if(!w.tallas||w.tallas[it.item]==null) return;
+        if(String(w.tallas[it.item])!==tallaStr) return;
+        const cargoNorm=norm(w.cargo||'');
+        let ent=0;
+        for(const [cargo,itemMap] of Object.entries(S.entregas)){
+          if(norm(cargo)===cargoNorm){
+            ent=itemMap[it.item]||itemMap[norm(it.item)]||0;
+            if(ent) break;
           }
-          demanda+=ent;
-        });
-        critico=Math.floor(demanda/2)+1;
-      }
+        }
+        demanda+=ent;
+      });
+      // Usar cálculo dinámico si hay demanda; si no, usar stockCritico del Excel
+      let critico=demanda>0 ? Math.floor(demanda/2)+1 : (it.stockCritico||1);
       const aComprar=Math.max(0,critico-stockAct);
       return [it.item,it.talla||'—',stockAct,critico,aComprar];
     });
