@@ -2318,24 +2318,36 @@ function descargarPlanillaComprar(){
     const header=['Artículo','Talla','Stock Actual','Stock Crítico','A Comprar'];
     const rows=items.map(it=>{
       const stockAct=it.stockActual??0;
-      // Calcular demanda dinámicamente desde workers reales (más preciso que el Excel)
+      // Calcular demanda dinámicamente desde workers reales
       let demanda=0;
       const tallaStr=String(it.talla||'-');
+      const normItem=norm(it.item);
       workersBodega.forEach(w=>{
-        if(!w.tallas||w.tallas[it.item]==null) return;
-        if(String(w.tallas[it.item])!==tallaStr) return;
+        if(!w.tallas) return;
+        // Buscar talla del worker para este item (exact o normalizado)
+        let wTalla=w.tallas[it.item];
+        if(wTalla==null){
+          for(const [k,v] of Object.entries(w.tallas)){if(norm(k)===normItem){wTalla=v;break;}}
+        }
+        if(wTalla==null) return;
+        if(String(wTalla)!==tallaStr) return;
+        // Buscar entregas/año para el cargo de este worker
         const cargoNorm=norm(w.cargo||'');
         let ent=0;
         for(const [cargo,itemMap] of Object.entries(S.entregas)){
           if(norm(cargo)===cargoNorm){
-            ent=itemMap[it.item]||itemMap[norm(it.item)]||0;
+            // Buscar item exacto o normalizado en el mapa de entregas
+            ent=itemMap[it.item];
+            if(ent==null){for(const [k,v] of Object.entries(itemMap)){if(norm(k)===normItem){ent=v;break;}}}
+            ent=ent||0;
             if(ent) break;
           }
         }
         demanda+=ent;
       });
-      // Usar cálculo dinámico si hay demanda; si no, usar stockCritico del Excel
-      let critico=demanda>0 ? Math.floor(demanda/2)+1 : (it.stockCritico||1);
+      // Si demanda=0 nadie usa esa talla → A Comprar = 0
+      if(demanda===0){ return [it.item,it.talla||'—',stockAct,0,0]; }
+      let critico=Math.round(demanda/2)+1;
       const aComprar=Math.max(0,critico-stockAct);
       return [it.item,it.talla||'—',stockAct,critico,aComprar];
     });
