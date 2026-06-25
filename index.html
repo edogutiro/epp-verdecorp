@@ -2194,22 +2194,27 @@ function renderDiag(){
 // INVENTARIO MENSUAL
 // ══════════════════════════════════════════════════════
 function toggleInventario(){
-  const panel=document.getElementById('inventarioPanel');
-  const btn=document.getElementById('inventarioToggleBtn');
-  const isHidden=panel.classList.contains('hidden');
-  if(isHidden){
-    if(S.adminOpen){
-      document.getElementById('adminPanel').classList.add('hidden');
-      document.getElementById('adminToggleBtn').textContent='🔐 Panel Admin';
-      S.adminOpen=false;
+  try{
+    const panel=document.getElementById('inventarioPanel');
+    const btn=document.getElementById('inventarioToggleBtn');
+    if(!panel){ showToast('Error: panel inventario no encontrado','error'); return; }
+    const isHidden=panel.style.display==='none'||panel.classList.contains('hidden');
+    if(isHidden){
+      if(S.adminOpen){
+        document.getElementById('adminPanel').classList.add('hidden');
+        document.getElementById('adminToggleBtn').textContent='🔐 Panel Admin';
+        S.adminOpen=false;
+      }
+      panel.style.display='block';
+      panel.classList.remove('hidden');
+      if(btn) btn.textContent='✖ Cerrar Inventario';
+      renderInventario();
+    } else {
+      panel.style.display='none';
+      panel.classList.add('hidden');
+      if(btn) btn.textContent='📦 Inventario';
     }
-    panel.classList.remove('hidden');
-    btn.textContent='✖ Cerrar Inventario';
-    renderInventario();
-  } else {
-    panel.classList.add('hidden');
-    btn.textContent='📦 Inventario';
-  }
+  } catch(e){ showToast('Error inventario: '+e.message,'error'); }
 }
 
 function renderInventario(){
