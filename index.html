@@ -2312,19 +2312,20 @@ function descargarPlanillaComprar(){
       let critico=it.stockCritico||0;
       if(!critico){
         let demanda=0;
+        const tallaStr=String(it.talla||'-');
         workersBodega.forEach(w=>{
-          if(w.tallas&&w.tallas[it.item]!=null){
-            const cargoNorm=norm(w.cargo||'');
-            let ent=0;
-            // buscar en S.entregas por cargo exacto o normalizado
-            for(const [cargo,itemMap] of Object.entries(S.entregas)){
-              if(norm(cargo)===cargoNorm){
-                ent=itemMap[it.item]||itemMap[norm(it.item)]||0;
-                if(ent) break;
-              }
+          if(!w.tallas||w.tallas[it.item]==null) return;
+          // solo contar si la talla del trabajador coincide con la del stock
+          if(String(w.tallas[it.item])!==tallaStr) return;
+          const cargoNorm=norm(w.cargo||'');
+          let ent=0;
+          for(const [cargo,itemMap] of Object.entries(S.entregas)){
+            if(norm(cargo)===cargoNorm){
+              ent=itemMap[it.item]||itemMap[norm(it.item)]||0;
+              if(ent) break;
             }
-            demanda+=ent;
           }
+          demanda+=ent;
         });
         critico=Math.floor(demanda/2)+1;
       }
