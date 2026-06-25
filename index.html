@@ -2308,7 +2308,26 @@ function descargarPlanillaComprar(){
     const header=['Artículo','Talla','Stock Actual','Stock Crítico','A Comprar'];
     const rows=items.map(it=>{
       const stockAct=it.stockActual??0;
-      const critico=it.stockCritico??0;
+      // Preferir stockCritico guardado; si no existe, calcular con workers
+      let critico=it.stockCritico||0;
+      if(!critico){
+        let demanda=0;
+        workersBodega.forEach(w=>{
+          if(w.tallas&&w.tallas[it.item]!=null){
+            const cargoNorm=norm(w.cargo||'');
+            let ent=0;
+            // buscar en S.entregas por cargo exacto o normalizado
+            for(const [cargo,itemMap] of Object.entries(S.entregas)){
+              if(norm(cargo)===cargoNorm){
+                ent=itemMap[it.item]||itemMap[norm(it.item)]||0;
+                if(ent) break;
+              }
+            }
+            demanda+=ent;
+          }
+        });
+        critico=Math.floor(demanda/2)+1;
+      }
       const aComprar=Math.max(0,critico-stockAct);
       return [it.item,it.talla||'—',stockAct,critico,aComprar];
     });
