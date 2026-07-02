@@ -458,6 +458,27 @@
             </div>
           </div>
 
+          <!-- Frecuencias de Entrega -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accEntregas'); if(document.getElementById('accEntregas').classList.contains('open')) renderEntregasAdmin()"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                📋 Frecuencias de Entrega</span>
+              <svg id="accEntregasIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accEntregas" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3 space-y-3">
+                <p class="text-xs text-gray-400">Cuántas veces al año recibe cada cargo cada EPP. Guarda los cambios al terminar.</p>
+                <div id="entregasAdminList" class="space-y-2 max-h-96 overflow-auto"></div>
+                <button onclick="saveEntregasAdmin()"
+                  class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs w-full mt-1">💾 Guardar frecuencias</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Exportar Excel -->
           <div class="bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
             <div>
@@ -2449,6 +2470,92 @@ function toggleAcc(id){
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// FRECUENCIAS DE ENTREGA (Panel Admin)
+// ════════════════════════════════════════════════════════════════════════
+
+function renderEntregasAdmin(){
+  const container = document.getElementById('entregasAdminList');
+  if(!container) return;
+
+  // S.entregas = { cargo: { item: count } }
+  const cargos = Object.keys(S.entregas||{}).sort();
+
+  if(!cargos.length){
+    container.innerHTML = '<p class="text-gray-400 text-xs text-center py-3">Sin frecuencias cargadas. Importa el Excel primero o agrega manualmente.</p>';
+    return;
+  }
+
+  container.innerHTML = cargos.map(cargo=>{
+    const items = Object.entries(S.entregas[cargo]||{}).sort((a,b)=>a[0].localeCompare(b[0],'es'));
+    const rows = items.map(([item, count])=>`
+      <div class="flex items-center gap-2 py-0.5">
+        <span class="text-xs text-gray-300 flex-1 truncate" title="${item}">${item}</span>
+        <input type="number" min="0" max="52" step="1"
+          data-cargo="${cargo}" data-item="${item}"
+          value="${count}"
+          class="w-16 text-xs text-center border border-gray-600 bg-gray-700 text-white rounded px-1 py-0.5">
+        <span class="text-xs text-gray-500">/ año</span>
+        <button onclick="deleteEntregaRow('${cargo}','${item}')" class="text-red-400 hover:text-red-300 text-xs px-1">✕</button>
+      </div>`).join('');
+
+    return `<div class="bg-gray-700 rounded-lg p-3" data-cargo-block="${cargo}">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-vc-400">${cargo}</span>
+        <button onclick="addEntregaRow('${cargo}')" class="text-xs text-vc-400 hover:text-vc-300">+ Agregar EPP</button>
+      </div>
+      <div class="space-y-0.5" id="entRows_${cargo.replace(/[^a-z0-9]/gi,'_')}">${rows}</div>
+    </div>`;
+  }).join('');
+
+  // Botón agregar cargo
+  const addCargoBtn = `<button onclick="addEntregaCargo()" class="text-xs text-vc-400 hover:text-vc-300 w-full text-center py-1">+ Agregar cargo nuevo</button>`;
+  container.insertAdjacentHTML('beforeend', addCargoBtn);
+}
+
+function addEntregaRow(cargo){
+  const item = prompt('Nombre del EPP:');
+  if(!item||!item.trim()) return;
+  if(!S.entregas[cargo]) S.entregas[cargo]={};
+  S.entregas[cargo][item.trim()] = 1;
+  renderEntregasAdmin();
+}
+
+function deleteEntregaRow(cargo, item){
+  if(!S.entregas[cargo]) return;
+  delete S.entregas[cargo][item];
+  if(!Object.keys(S.entregas[cargo]).length) delete S.entregas[cargo];
+  renderEntregasAdmin();
+}
+
+function addEntregaCargo(){
+  const cargo = prompt('Nombre del cargo:');
+  if(!cargo||!cargo.trim()) return;
+  if(!S.entregas[cargo.trim()]) S.entregas[cargo.trim()]={};
+  renderEntregasAdmin();
+}
+
+async function saveEntregasAdmin(){
+  // Leer todos los inputs del DOM y construir el objeto
+  const data = {};
+  document.querySelectorAll('#entregasAdminList input[data-cargo]').forEach(inp=>{
+    const cargo = inp.dataset.cargo;
+    const item  = inp.dataset.item;
+    const val   = parseInt(inp.value)||0;
+    if(!data[cargo]) data[cargo]={};
+    data[cargo][item] = val;
+  });
+
+  try{
+    await db.collection('config').doc('entregas').set({data});
+    S.entregas = data;
+    showToast('Frecuencias guardadas');
+  } catch(e){
+    showToast('Error al guardar: '+e.message,'error');
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
 // GESTIÓN DE TRABAJADORES (Panel Admin)
 // ════════════════════════════════════════════════════════════════════════
 
@@ -2486,57 +2593,95 @@ function renderWorkerAdmin(){
 function openWorkerModal(docId){
   const modal = document.getElementById('workerModal');
   if(!modal) return;
-  
-  const titleEl = document.getElementById('workerModalTitle');
-  const nombreEl = document.getElementById('workerModalNombre');
-  const cargoEl = document.getElementById('workerModalCargo');
-  const sedeEl = document.getElementById('workerModalSede');
-  const activoWrap = document.getElementById('workerModalActivoWrap');
-  const activoEl = document.getElementById('workerModalActivo');
-  const docIdEl = document.getElementById('workerModalDocId');
 
-  if(docId){
-    // Edit mode
-    const worker = S.workers.find(w=>w._id===docId) || {};
-    titleEl.textContent = 'Editar Trabajador';
-    nombreEl.value = worker.nombre||'';
-    cargoEl.value = worker.cargo||'';
-    sedeEl.value = worker.sede||'';
-    if(activoEl) activoEl.value = (worker.activo!==false)?'activo':'baja';
-    if(activoWrap) activoWrap.classList.remove('hidden');
+  const worker = docId ? (S.workers.find(w=>w._id===docId)||{}) : {};
+  const isEdit = !!docId;
+
+  document.getElementById('workerModalTitle').textContent = isEdit ? 'Editar Trabajador' : 'Agregar Trabajador';
+  document.getElementById('wNombre').value = worker.nombre||'';
+  document.getElementById('wCargo').value  = worker.cargo||'';
+  document.getElementById('wSede').value   = worker.sede||'';
+  document.getElementById('wDocId').value  = docId||'';
+
+  const activoWrap = document.getElementById('wActivoWrap');
+  if(isEdit){
+    activoWrap.classList.remove('hidden');
+    const activo = worker.activo !== false;
+    document.getElementById('wActivoTrue').checked  = activo;
+    document.getElementById('wActivoFalse').checked = !activo;
   } else {
-    // New worker mode
-    titleEl.textContent = 'Agregar Trabajador';
-    nombreEl.value=''; cargoEl.value=''; sedeEl.value='';
-    if(activoWrap) activoWrap.classList.add('hidden');
+    activoWrap.classList.add('hidden');
   }
-  if(docIdEl) docIdEl.value = docId||'';
+
+  // Renderizar tallas
+  _renderWorkerTallas(worker.tallas||{});
+
   modal.classList.remove('hidden');
+  modal.style.display='flex';
+}
+
+function _renderWorkerTallas(tallas){
+  const container = document.getElementById('wTallasContainer');
+  if(!container) return;
+
+  // Obtener items únicos del stock (sin duplicar por bodega)
+  const itemsMap = {}; // itemName -> Set de tallas disponibles
+  S.stock && Object.values(S.stock).forEach(arr=>{
+    (arr||[]).forEach(it=>{
+      if(!it.item) return;
+      if(!itemsMap[it.item]) itemsMap[it.item] = new Set();
+      if(it.talla && it.talla!=='-') itemsMap[it.item].add(it.talla);
+    });
+  });
+
+  const items = Object.keys(itemsMap).sort();
+  if(!items.length){
+    container.innerHTML='<p class="text-gray-400 text-xs text-center py-2">Sin artículos en stock. Importa el Excel primero.</p>';
+    return;
+  }
+
+  container.innerHTML = items.map(item=>{
+    const tallasDisp = ['', '-', ...Array.from(itemsMap[item]).sort()];
+    const tallaActual = tallas[item]||'';
+    const opts = tallasDisp.map(t=>{
+      const label = t==='' ? '— No asignado' : t==='-' ? 'Estándar' : t;
+      return `<option value="${t}" ${tallaActual===t?'selected':''}>${label}</option>`;
+    }).join('');
+    return `<div class="flex items-center gap-2">
+      <span class="text-xs text-gray-600 flex-1 truncate" title="${item}">${item}</span>
+      <select data-item="${item}" class="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white w-32 shrink-0">${opts}</select>
+    </div>`;
+  }).join('');
 }
 
 function closeWorkerModal(){
   const modal = document.getElementById('workerModal');
-  if(modal) modal.classList.add('hidden');
+  if(modal){ modal.classList.add('hidden'); modal.style.display='none'; }
 }
 
 async function saveWorkerModal(){
-  const docId = (document.getElementById('workerModalDocId')||{}).value||'';
-  const nombre = ((document.getElementById('workerModalNombre')||{}).value||'').trim();
-  const cargo  = ((document.getElementById('workerModalCargo')||{}).value||'').trim();
-  const sede   = ((document.getElementById('workerModalSede')||{}).value||'').trim();
-  const activoVal = (document.getElementById('workerModalActivo')||{}).value;
-  const activo = activoVal !== 'baja';
+  const docId  = (document.getElementById('wDocId')||{}).value||'';
+  const nombre = ((document.getElementById('wNombre')||{}).value||'').trim();
+  const cargo  = ((document.getElementById('wCargo')||{}).value||'').trim();
+  const sede   = ((document.getElementById('wSede')||{}).value||'').trim();
+  const activoFalseEl = document.getElementById('wActivoFalse');
+  const activo = activoFalseEl ? !activoFalseEl.checked : true;
 
   if(!nombre){ showToast('El nombre es obligatorio','error'); return; }
+  if(!sede)  { showToast('Selecciona una sede','error'); return; }
+
+  // Leer tallas del contenedor
+  const tallas = {};
+  document.querySelectorAll('#wTallasContainer select[data-item]').forEach(sel=>{
+    if(sel.value !== '') tallas[sel.dataset.item] = sel.value;
+  });
 
   try{
     if(docId){
-      // Update existing
-      await db.collection('workers').doc(docId).update({nombre,cargo,sede,activo});
+      await db.collection('workers').doc(docId).update({nombre,cargo,sede,tallas,activo});
       showToast('Trabajador actualizado');
     } else {
-      // Create new — find tallas from Matriz (empty for now)
-      await db.collection('workers').add({nombre,cargo,sede,tallas:{},activo:true});
+      await db.collection('workers').add({nombre,cargo,sede,tallas,activo:true});
       showToast('Trabajador agregado');
     }
     closeWorkerModal();
@@ -2591,9 +2736,11 @@ async function toggleWorkerActivo(docId, currentlyActivo){
 
 <!-- MODAL GESTIÓN TRABAJADORES -->
 <div id="workerModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4" style="display:none">
-  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-    <h3 id="workerModalTitle" class="font-bold text-gray-800 text-lg mb-5">Agregar Trabajador</h3>
-    <div class="space-y-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col" style="max-height:90vh">
+    <div class="p-6 pb-3 border-b border-gray-100">
+      <h3 id="workerModalTitle" class="font-bold text-gray-800 text-lg">Agregar Trabajador</h3>
+    </div>
+    <div class="overflow-y-auto flex-1 p-6 space-y-4">
       <div>
         <label class="label-sm">Nombre completo *</label>
         <input id="wNombre" type="text" class="input-base" placeholder="Nombre Apellido Apellido">
@@ -2616,16 +2763,24 @@ async function toggleWorkerActivo(docId, currentlyActivo){
         <label class="label-sm">Estado</label>
         <div class="flex gap-3">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name="wActivo" value="true" checked class="accent-vc-700"> Activo
+            <input type="radio" name="wActivo" id="wActivoTrue" value="true" checked class="accent-vc-700"> Activo
           </label>
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="radio" name="wActivo" value="false" class="accent-red-500"> De baja
+            <input type="radio" name="wActivo" id="wActivoFalse" value="false" class="accent-red-500"> De baja
           </label>
+        </div>
+      </div>
+      <!-- Tallas EPP -->
+      <div>
+        <label class="label-sm">Tallas EPP asignadas</label>
+        <p class="text-xs text-gray-400 mb-2">Deja en blanco los EPPs que no corresponden a este trabajador. "Estándar" = talla única.</p>
+        <div id="wTallasContainer" class="space-y-1.5 bg-gray-50 rounded-lg p-3 max-h-52 overflow-y-auto">
+          <p class="text-gray-400 text-xs text-center py-2">Cargando EPPs...</p>
         </div>
       </div>
     </div>
     <input type="hidden" id="wDocId">
-    <div class="flex gap-3 mt-6">
+    <div class="flex gap-3 p-6 pt-3 border-t border-gray-100">
       <button onclick="saveWorkerModal()"
         class="btn-primary bg-vc-700 hover:bg-vc-600 text-white flex-1">💾 Guardar</button>
       <button onclick="closeWorkerModal()"
