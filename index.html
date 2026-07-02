@@ -321,6 +321,7 @@
                   <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stock App</th>
                   <th class="text-center px-4 py-2.5 text-xs font-semibold text-amber-600 uppercase tracking-wide">Conteo Físico</th>
                   <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Diferencia</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Estado</th>
                 </tr>
               </thead>
               <tbody id="invBody"></tbody>
@@ -430,6 +431,33 @@
             </div>
           </div>
 
+
+          <!-- ACC 4: Gestión de Trabajadores -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accWorkers'); if(document.getElementById('accWorkers').classList.contains('open')) renderWorkerAdmin()"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                🧑‍🔧 Gestión de Trabajadores</span>
+              <svg id="accWorkersIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accWorkers" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3 space-y-3">
+                <div class="flex items-center justify-between">
+                  <p class="text-xs text-gray-400">Agrega, edita o da de baja trabajadores sin reimportar el Excel.</p>
+                  <button onclick="openWorkerModal(null)" class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs">
+                    + Agregar
+                  </button>
+                </div>
+                <input id="workerAdminSearch" type="text" placeholder="Filtrar por nombre..."
+                  class="input-base text-xs w-full" oninput="renderWorkerAdmin()">
+                <div id="workerAdminList" class="space-y-1.5 max-h-72 overflow-auto"></div>
+              </div>
+            </div>
+          </div>
+
           <!-- Exportar Excel -->
           <div class="bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
             <div>
@@ -519,6 +547,7 @@
             </div>
             <div>
               <label class="label-sm">Trabajador *</label>
+              <input id="entBuscarTrab" type="text" placeholder="🔍 Buscar trabajador..." class="input-base mb-1.5" oninput="filtrarTrabajador()" autocomplete="off">
               <select id="entTrabajador" onchange="onEntTrabajador()" class="input-base">
                 <option value="">Seleccionar trabajador...</option>
               </select>
@@ -1094,6 +1123,7 @@ function onStockUpdated(){
 function onWorkersUpdated(){
   fillWorkerSel();
   renderDiag();
+  renderWorkerAdmin();
 }
 
 function onHistUpdated(){
@@ -1151,19 +1181,26 @@ async function importExcel(inp){
       bar.style.width=String(50+Math.round((i/allItems.length)*30))+'%';
     }
 
-    bar.style.width='82%'; msg.textContent=`Subiendo ${workers.length} trabajadores...`;
+    bar.style.width='82%'; msg.textContent=`Sincronizando ${workers.length} trabajadores...`;
 
-    // Delete existing workers
+    // MERGE workers: actualizar existentes por nombre, crear nuevos, preservar APP-managed
     const existingW = await db.collection('workers').get();
-    const delBatchW = db.batch();
-    existingW.forEach(d=>delBatchW.delete(d.ref));
-    await delBatchW.commit();
+    const existingMap = {};
+    existingW.forEach(d=>{ existingMap[norm(d.data().nombre||'')] = d; });
 
-    // Batch write workers
     for(let i=0;i<workers.length;i+=400){
       const chunk=workers.slice(i,i+400);
       const batch=db.batch();
-      chunk.forEach(w=>{ const ref=db.collection('workers').doc(); batch.set(ref,w); });
+      chunk.forEach(w=>{
+        const key=norm(w.nombre||'');
+        if(existingMap[key]){
+          // Actualizar tallas/cargo/sede pero preservar activo y campos APP
+          batch.update(existingMap[key].ref, {nombre:w.nombre,cargo:w.cargo,sede:w.sede,tallas:w.tallas});
+        } else {
+          const ref=db.collection('workers').doc();
+          batch.set(ref,{...w,activo:true});
+        }
+      });
       await batch.commit();
     }
 
@@ -2149,22 +2186,29 @@ async function clearHist(){
 // ══════════════════════════════════════════════════════
 // WORKER DROPDOWN
 // ══════════════════════════════════════════════════════
-function fillWorkerSel(bodega=''){
+function fillWorkerSel(bodega='', search=''){
   const sel=document.getElementById('entTrabajador'); if(!sel) return;
   const prev=sel.value;
+  const q=norm(search);
   sel.innerHTML='<option value="">Seleccionar trabajador...</option>';
   S.workers.forEach((w,i)=>{
-    // Filtrar por bodega si hay una seleccionada
-    if(bodega && !sedeEnBodega(w.sede, bodega)) return;
+    if(w.activo===false) return;                          // ocultar inactivos
+    if(bodega && !sedeEnBodega(w.sede, bodega)) return;  // filtrar por bodega
+    if(q && !norm(w.nombre||'').includes(q)) return;     // filtrar por búsqueda
     const o=document.createElement('option');
     o.value=i; o.textContent=`${w.nombre} (${w.cargo||'—'})`;
     sel.appendChild(o);
   });
-  // Opción especial siempre al final: visitas / clientes sin registro en Matriz EPP
   const oOtro=document.createElement('option');
   oOtro.value='__otro__'; oOtro.textContent='⚠ Otro / Visita (ingreso manual)';
   sel.appendChild(oOtro);
   if(prev) sel.value=prev;
+}
+
+function filtrarTrabajador(){
+  const b=document.getElementById('entBodega').value;
+  const q=document.getElementById('entBuscarTrab').value;
+  fillWorkerSel(b, q);
 }
 
 function sedeEnBodega(sede, bodega){
@@ -2257,16 +2301,25 @@ function renderInventario(){
   wrap.classList.remove('hidden');
   actions.classList.remove('hidden');
   tbody.innerHTML=items.map((it,i)=>`
-    <tr class="border-t border-gray-100 hover:bg-gray-50">
+    ${(()=>{
+      const sc=it.stockCritico||0;
+      const sa=it.stockActual??0;
+      const bajo=sc>0&&sa<sc;
+      const rowCls=bajo?'bg-red-50':'';
+      const badge=bajo?`<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">⚠ Bajo</span>`
+        :`<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">OK</span>`;
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50 ${rowCls}">
       <td class="px-4 py-2 text-gray-800">${it.item||'—'}</td>
       <td class="px-4 py-2 text-gray-500">${it.talla||'—'}</td>
-      <td class="px-4 py-2 text-center font-bold text-vc-700">${it.stockActual??0}</td>
+      <td class="px-4 py-2 text-center font-bold ${bajo?'text-red-600':'text-vc-700'}">${sa}</td>
       <td class="px-4 py-2 text-center">
-        <input type="number" min="0" value="${it.stockActual??0}" data-idx="${i}"
+        <input type="number" min="0" value="${sa}" data-idx="${i}"
           class="input-base w-20 text-center py-1" oninput="onInvInput(this)">
       </td>
       <td class="px-4 py-2 text-center font-bold text-gray-400" id="invDif${i}">0</td>
-    </tr>`).join('');
+      <td class="px-4 py-2 text-center">${badge}</td>
+    </tr>`;
+    })()}`).join('');
 }
 
 function onInvInput(el){
@@ -2396,6 +2449,117 @@ function toggleAcc(id){
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// GESTIÓN DE TRABAJADORES (Panel Admin)
+// ════════════════════════════════════════════════════════════════════════
+
+function renderWorkerAdmin(){
+  const container = document.getElementById('workerAdminList');
+  if(!container) return;
+  const q = norm((document.getElementById('workerAdminSearch')||{}).value||'');
+  const list = S.workers.map((w,i)=>({...w, _idx:i}))
+    .filter(w=> !q || norm(w.nombre||'').includes(q));
+  
+  if(!list.length){
+    container.innerHTML='<p class="text-gray-400 text-sm text-center py-4">Sin resultados</p>';
+    return;
+  }
+
+  container.innerHTML = list.map(w=>{
+    const docId = w._id||'';
+    const activo = w.activo !== false;
+    const badgeCls = activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500';
+    const badgeTxt = activo ? 'Activo' : 'De baja';
+    return `<div class="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
+      <div class="flex-1 min-w-0">
+        <span class="font-medium text-gray-800">${w.nombre||'—'}</span>
+        <span class="text-gray-400 text-xs ml-2">${w.cargo||''} · ${w.sede||''}</span>
+      </div>
+      <div class="flex items-center gap-2 ml-2 shrink-0">
+        <span class="text-xs px-1.5 py-0.5 rounded ${badgeCls}">${badgeTxt}</span>
+        <button onclick="openWorkerModal('${docId}')" class="text-blue-600 hover:text-blue-800 text-xs px-2 py-0.5 border border-blue-200 rounded">Editar</button>
+        <button onclick="toggleWorkerActivo('${docId}',${activo})" class="text-xs px-2 py-0.5 border rounded ${activo?'text-red-500 border-red-200 hover:text-red-700':'text-green-600 border-green-200 hover:text-green-800'}">${activo?'Dar de baja':'Reactivar'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openWorkerModal(docId){
+  const modal = document.getElementById('workerModal');
+  if(!modal) return;
+  
+  const titleEl = document.getElementById('workerModalTitle');
+  const nombreEl = document.getElementById('workerModalNombre');
+  const cargoEl = document.getElementById('workerModalCargo');
+  const sedeEl = document.getElementById('workerModalSede');
+  const activoWrap = document.getElementById('workerModalActivoWrap');
+  const activoEl = document.getElementById('workerModalActivo');
+  const docIdEl = document.getElementById('workerModalDocId');
+
+  if(docId){
+    // Edit mode
+    const worker = S.workers.find(w=>w._id===docId) || {};
+    titleEl.textContent = 'Editar Trabajador';
+    nombreEl.value = worker.nombre||'';
+    cargoEl.value = worker.cargo||'';
+    sedeEl.value = worker.sede||'';
+    if(activoEl) activoEl.value = (worker.activo!==false)?'activo':'baja';
+    if(activoWrap) activoWrap.classList.remove('hidden');
+  } else {
+    // New worker mode
+    titleEl.textContent = 'Agregar Trabajador';
+    nombreEl.value=''; cargoEl.value=''; sedeEl.value='';
+    if(activoWrap) activoWrap.classList.add('hidden');
+  }
+  if(docIdEl) docIdEl.value = docId||'';
+  modal.classList.remove('hidden');
+}
+
+function closeWorkerModal(){
+  const modal = document.getElementById('workerModal');
+  if(modal) modal.classList.add('hidden');
+}
+
+async function saveWorkerModal(){
+  const docId = (document.getElementById('workerModalDocId')||{}).value||'';
+  const nombre = ((document.getElementById('workerModalNombre')||{}).value||'').trim();
+  const cargo  = ((document.getElementById('workerModalCargo')||{}).value||'').trim();
+  const sede   = ((document.getElementById('workerModalSede')||{}).value||'').trim();
+  const activoVal = (document.getElementById('workerModalActivo')||{}).value;
+  const activo = activoVal !== 'baja';
+
+  if(!nombre){ showToast('El nombre es obligatorio','error'); return; }
+
+  try{
+    if(docId){
+      // Update existing
+      await db.collection('workers').doc(docId).update({nombre,cargo,sede,activo});
+      showToast('Trabajador actualizado');
+    } else {
+      // Create new — find tallas from Matriz (empty for now)
+      await db.collection('workers').add({nombre,cargo,sede,tallas:{},activo:true});
+      showToast('Trabajador agregado');
+    }
+    closeWorkerModal();
+  } catch(e){
+    showToast('Error al guardar: '+e.message,'error');
+  }
+}
+
+async function toggleWorkerActivo(docId, currentlyActivo){
+  if(!docId){ showToast('Error: sin ID','error'); return; }
+  const newVal = !currentlyActivo;
+  const txt = newVal ? 'reactivar' : 'dar de baja';
+  if(!confirm(`¿Deseas ${txt} a este trabajador?`)) return;
+  try{
+    await db.collection('workers').doc(docId).update({activo: newVal});
+    showToast(newVal ? 'Trabajador reactivado' : 'Trabajador dado de baja');
+  } catch(e){
+    showToast('Error: '+e.message,'error');
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
 // BOOTSTRAP — se ejecuta al cargar la página
 // ════════════════════════════════════════════════════════════════════════
 (function init(){
@@ -2424,5 +2588,50 @@ function toggleAcc(id){
   initFirebase(cfg);
 })();
 </script>
+
+<!-- MODAL GESTIÓN TRABAJADORES -->
+<div id="workerModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+    <h3 id="workerModalTitle" class="font-bold text-gray-800 text-lg mb-5">Agregar Trabajador</h3>
+    <div class="space-y-4">
+      <div>
+        <label class="label-sm">Nombre completo *</label>
+        <input id="wNombre" type="text" class="input-base" placeholder="Nombre Apellido Apellido">
+      </div>
+      <div>
+        <label class="label-sm">Cargo *</label>
+        <input id="wCargo" type="text" class="input-base" placeholder="Operario, Supervisor, Operador...">
+      </div>
+      <div>
+        <label class="label-sm">Sede (Bodega) *</label>
+        <select id="wSede" class="input-base">
+          <option value="">Seleccionar...</option>
+          <option value="BULNES 1">BULNES 1</option>
+          <option value="BULNES 3">BULNES 3</option>
+          <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+          <option value="ECOCORP">ECOCORP</option>
+        </select>
+      </div>
+      <div id="wActivoWrap" class="hidden">
+        <label class="label-sm">Estado</label>
+        <div class="flex gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="wActivo" value="true" checked class="accent-vc-700"> Activo
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="wActivo" value="false" class="accent-red-500"> De baja
+          </label>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" id="wDocId">
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveWorkerModal()"
+        class="btn-primary bg-vc-700 hover:bg-vc-600 text-white flex-1">💾 Guardar</button>
+      <button onclick="closeWorkerModal()"
+        class="btn-primary bg-gray-200 hover:bg-gray-300 text-gray-700 flex-1">Cancelar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
