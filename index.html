@@ -519,10 +519,7 @@
           <!-- Borrar historial -->
           <div class="flex items-center justify-between pt-1">
             <span class="text-xs text-gray-500">Opciones destructivas</span>
-            <button onclick="clearHist()"
-              class="btn-primary bg-transparent border border-red-800 hover:border-red-500 text-red-500 text-xs">
-              🗑 Borrar historial completo
-            </button>
+
           </div>
 
         </div>
@@ -2202,6 +2199,17 @@ function exportarExcel(){
   const fecha=new Date().toLocaleDateString('es-CL').replace(/\//g,'-');
   XLSX.writeFile(wb,`EPP_Verdecorp_Stock_${fecha}.xlsx`);
   showToast('Excel exportado correctamente.','ok');
+}
+
+async function deleteHistRecord(docId){
+  if(S.rol!=='admin'){ showToast('Solo el administrador puede eliminar registros.','warn'); return; }
+  if(!confirm('¿Eliminar este registro del historial?\n\nEsta acción no puede deshacerse.\nNota: el stock NO se modifica automáticamente.')) return;
+  try{
+    await db.collection('historial').doc(docId).delete();
+    showToast('Registro eliminado');
+  } catch(e){
+    showToast('Error al eliminar: '+e.message,'error');
+  }
 }
 
 async function clearHist(){
