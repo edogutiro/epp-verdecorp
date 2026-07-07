@@ -179,8 +179,12 @@
         class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center mt-3">
         Ingresar
       </button>
+      <button onclick="showRecuperar()"
+        class="w-full text-center text-xs text-gray-400 hover:text-vc-700 mt-2">
+        ¿Olvidaste tu contraseña?
+      </button>
       <button onclick="showRegister()"
-        class="w-full text-center text-sm text-vc-700 hover:text-vc-900 mt-3 font-semibold">
+        class="w-full text-center text-sm text-vc-700 hover:text-vc-900 mt-2 font-semibold">
         ¿Primera vez? Crear cuenta →
       </button>
     </div>
@@ -202,6 +206,25 @@
       <button onclick="register()" id="btnRegister"
         class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center mt-3">
         Crear cuenta
+      </button>
+      <button onclick="showLogin()"
+        class="w-full text-center text-sm text-gray-500 hover:text-gray-700 mt-3">
+        ← Volver al login
+      </button>
+    </div>
+
+    <!-- Recuperar contraseña -->
+    <div id="recuperarForm" class="hidden">
+      <p class="text-sm text-gray-600 mb-4 text-center">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
+      <div class="mb-3">
+        <label class="label-sm">Correo electrónico</label>
+        <input id="recupEmail" type="email" class="input-base" placeholder="usuario@verdecorp.cl"
+          onkeydown="if(event.key='Enter')enviarRecuperacion()">
+      </div>
+      <p id="recupMsg" class="text-xs mt-1 mb-2 hidden"></p>
+      <button onclick="enviarRecuperacion()" id="btnRecup"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center">
+        Enviar enlace
       </button>
       <button onclick="showLogin()"
         class="w-full text-center text-sm text-gray-500 hover:text-gray-700 mt-3">
@@ -1062,7 +1085,31 @@ async function logout(){
 }
 
 function showRegister(){ ['loginForm','recuperarForm'].forEach(id=>document.getElementById(id).classList.add('hidden')); document.getElementById('registerForm').classList.remove('hidden'); }
-function showLogin(){ document.getElementById('registerForm').classList.add('hidden'); document.getElementById('loginForm').classList.remove('hidden'); }
+function showRecuperar(){
+  ['loginForm','registerForm'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+  document.getElementById('recuperarForm').classList.remove('hidden');
+  document.getElementById('recupMsg').classList.add('hidden');
+  document.getElementById('recupEmail').value='';
+}
+async function enviarRecuperacion(){
+  const email=document.getElementById('recupEmail').value.trim();
+  const msg=document.getElementById('recupMsg');
+  const btn=document.getElementById('btnRecup');
+  if(!email){ msg.textContent='Ingresa tu correo.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  btn.disabled=true; btn.textContent='Enviando...';
+  try{
+    await firebase.auth().sendPasswordResetEmail(email);
+    msg.textContent='✅ Correo enviado. Revisa tu bandeja de entrada (y carpeta de spam).';
+    msg.className='text-xs mt-1 mb-2 text-vc-700'; msg.classList.remove('hidden');
+  } catch(e){
+    let txt='Error al enviar el correo.';
+    if(e.code==='auth/user-not-found') txt='No existe una cuenta con ese correo.';
+    else if(e.code==='auth/invalid-email') txt='Correo inválido.';
+    msg.textContent=txt; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden');
+  }
+  btn.disabled=false; btn.textContent='Enviar enlace';
+}
+function showLogin(){ ['registerForm','recuperarForm'].forEach(id=>document.getElementById(id).classList.add('hidden')); document.getElementById('loginForm').classList.remove('hidden'); }
 
 // ══════════════════════════════════════════════════════
 // CARGAR APP
