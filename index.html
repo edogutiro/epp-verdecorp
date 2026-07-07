@@ -713,6 +713,60 @@
         </div>
       </div>
 
+      <!-- TRASPASO ENTRE BODEGAS -->
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mt-4">
+        <h3 class="font-bold text-gray-800 text-base mb-1">🔄 Traspaso entre Bodegas</h3>
+        <p class="text-xs text-gray-400 mb-4">Mueve stock de una bodega a otra. Descuenta en origen y suma en destino.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label class="label-sm">Bodega Origen *</label>
+            <select id="trpOrigen" onchange="onTrpOrigen()" class="input-base">
+              <option value="">Seleccionar bodega...</option>
+              <option value="BULNES (1+3)">BULNES (1+3)</option>
+              <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+              <option value="ECOCORP">ECOCORP</option>
+            </select>
+          </div>
+          <div>
+            <label class="label-sm">Artículo EPP *</label>
+            <input id="trpBuscarArt" type="text" placeholder="🔍 Buscar artículo..." class="input-base mb-1.5" oninput="filtrarTrpArticulo()" autocomplete="off">
+            <select id="trpArticulo" onchange="onTrpArticulo()" class="input-base">
+              <option value="">Seleccionar artículo...</option>
+            </select>
+          </div>
+          <div>
+            <label class="label-sm">Stock disponible en origen</label>
+            <div id="trpStockInfo" class="input-base bg-gray-50 text-gray-500">—</div>
+          </div>
+          <div>
+            <label class="label-sm">Bodega Destino *</label>
+            <select id="trpDestino" class="input-base">
+              <option value="">Seleccionar bodega...</option>
+              <option value="BULNES (1+3)">BULNES (1+3)</option>
+              <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+              <option value="ECOCORP">ECOCORP</option>
+            </select>
+          </div>
+          <div>
+            <label class="label-sm">Cantidad a traspasar *</label>
+            <input id="trpCantidad" type="number" min="1" class="input-base" placeholder="0">
+          </div>
+          <div>
+            <label class="label-sm">Motivo (opcional)</label>
+            <input id="trpMotivo" type="text" class="input-base" placeholder="Ej: apoyo por falta de stock">
+          </div>
+        </div>
+        <div class="flex items-center gap-3 mt-4">
+          <button onclick="registrarTraspaso()" class="btn-primary bg-vc-700 hover:bg-vc-600 text-white">
+            🔄 Confirmar Traspaso
+          </button>
+          <button onclick="limpiarTraspaso()" class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm">
+            Limpiar
+          </button>
+          <span id="trpConfirm" class="text-sm font-semibold text-vc-700 hidden"></span>
+        </div>
+      </div>
+
       <!-- TAB: HISTORIAL -->
       <div id="tabH" class="tab-pane">
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
@@ -2159,8 +2213,8 @@ function renderHistorial(){
       </td>
       <td class="px-4 py-2.5 font-semibold text-sm">${h.item||'—'}</td>
       <td class="px-4 py-2.5 text-gray-500 text-sm">${h.talla||'—'}</td>
-      <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${h.bodega||'—'}</td>
-      <td class="px-4 py-2.5 text-sm">${h.trabajador||'—'}</td>
+      <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${h.tipo==='TRASPASO'?(h.bodegaOrigen||'—')+'<br>→ '+(h.bodegaDestino||'—'):(h.bodega||'—')}</td>
+      <td class="px-4 py-2.5 text-sm">${h.tipo==='TRASPASO'?(h.motivo||h.registradoPor||'—'):(h.trabajador||'—')}</td>
       <td class="px-4 py-2.5 text-center font-bold ${isEntrega?'text-vc-700':isAjuste?(h.cantidad>=0?'text-blue-600':'text-red-600'):'text-blue-700'}">
         ${isEntrega?'-':(h.cantidad>0?'+':'')}${h.cantidad||0}
       </td>
