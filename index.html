@@ -681,6 +681,7 @@
             </div>
             <div>
               <label class="label-sm">Artículo EPP *</label>
+              <input id="camBuscarArt" type="text" placeholder="🔍 Buscar artículo..." class="input-base mb-1.5" oninput="filtrarCamArticulo()" autocomplete="off">
               <select id="camArticulo" onchange="onCamArticulo()" class="input-base">
                 <option value="">Seleccionar artículo...</option>
               </select>
@@ -1132,11 +1133,15 @@ function onStockUpdated(){
   document.getElementById('operativeArea').classList.toggle('hidden',!hasData);
   document.getElementById('noDataMsg').classList.toggle('hidden',hasData);
   if(!hasData) return;
-  // Refresh dropdowns if user is mid-flow
+  // Refresh formulario de entrega si tiene bodega seleccionada
   const entB = document.getElementById('entBodega').value;
   if(entB){ refreshEntArticulo(entB); refreshEntStock(); }
+  // Refresh formulario de entrada de camión
   const camB = document.getElementById('camBodega').value;
   if(camB){ refreshCamArticulo(camB); refreshCamStock(); }
+  // Refresh inventario si está abierto
+  const invPanel = document.getElementById('inventarioPanel');
+  if(invPanel && !invPanel.classList.contains('hidden')) renderInventario();
 }
 
 function onWorkersUpdated(){
@@ -2007,15 +2012,21 @@ function onCamBodega(){
 function onCamArticulo(){ refreshCamStock(); }
 
 function refreshCamArticulo(bodega){
+  const q = norm((document.getElementById('camBuscarArt')||{}).value||'');
   const sel=document.getElementById('camArticulo');
   const prev=sel.value;
   sel.innerHTML='<option value="">Seleccionar artículo...</option>';
-  (S.stock[bodega]||[]).forEach(it=>{
+  (S.stock[bodega]||[]).filter(it=> !q || norm(it.item).includes(q)).forEach(it=>{
     const o=document.createElement('option');
     o.value=it.item+'|'+it.talla; o.textContent=it.item+(it.talla&&it.talla!=='-'?' — '+it.talla:'')+(` (Stock: ${it.stockActual})`);
     sel.appendChild(o);
   });
   if(prev) sel.value=prev;
+}
+
+function filtrarCamArticulo(){
+  const b=document.getElementById('camBodega').value;
+  if(b) refreshCamArticulo(b);
 }
 
 function refreshCamStock(){
@@ -2074,6 +2085,7 @@ function limpiarEntrada(clearBodega=true){
   document.getElementById('camCantidad').value='';
   document.getElementById('camProveedor').value='';
   document.getElementById('camStockInfo').textContent='—';
+  const buscar=document.getElementById('camBuscarArt'); if(buscar) buscar.value='';
   if(!clearBodega&&document.getElementById('camBodega').value)
     refreshCamArticulo(document.getElementById('camBodega').value);
 }
@@ -2455,6 +2467,11 @@ function switchTab(tabId){
   });
   document.getElementById(tabId).classList.add('active');
   document.getElementById('btnTab'+tabId.slice(3)).classList.add('tab-active');
+  // Al volver a Registro de Entregas, releer stock actualizado
+  if(tabId==='tabE'){
+    const entB = document.getElementById('entBodega').value;
+    if(entB){ refreshEntArticulo(entB); refreshEntStock(); }
+  }
 }
 
 function toggleAdmin(){
