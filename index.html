@@ -232,10 +232,27 @@
       </button>
     </div>
 
-    <button onclick="resetConfig()"
-      class="w-full text-center text-xs text-gray-300 hover:text-gray-500 mt-6">
-      Cambiar proyecto Firebase
-    </button>
+    <!-- Formulario: definir nueva contraseña (cuando llega oobCode por URL) -->
+    <div id="nuevaClaveForm" class="hidden">
+      <p class="text-sm text-gray-600 mb-4 text-center">Ingresa tu nueva contraseña para continuar.</p>
+      <div class="mb-3">
+        <label class="label-sm">Nueva contraseña (mín. 6 caracteres)</label>
+        <input id="nuevaClavePass" type="password" class="input-base" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')confirmarNuevaClave()">
+      </div>
+      <div class="mb-3">
+        <label class="label-sm">Repetir contraseña</label>
+        <input id="nuevaClavePass2" type="password" class="input-base" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')confirmarNuevaClave()">
+      </div>
+      <p id="nuevaClaveMsg" class="text-xs mt-1 mb-2 hidden"></p>
+      <button onclick="confirmarNuevaClave()" id="btnNuevaClave"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center">
+        Guardar nueva contraseña
+      </button>
+    </div>
+
+
   </div>
 </div>
 
@@ -1004,6 +1021,7 @@ function initFirebase(cfg){
     db   = firebase.firestore();
     auth = firebase.auth();
     auth.onAuthStateChanged(onAuthChanged);
+    _checkOobCode();
   } catch(e){
     showToast('Error al inicializar Firebase: '+e.message,'error',6000);
     setScreen('scrLogin');
@@ -1085,6 +1103,47 @@ async function logout(){
 }
 
 function showRegister(){ ['loginForm','recuperarForm'].forEach(id=>document.getElementById(id).classList.add('hidden')); document.getElementById('registerForm').classList.remove('hidden'); }
+
+function _checkOobCode(){
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('mode');
+  const oobCode = params.get('oobCode');
+  if(mode === 'resetPassword' && oobCode){
+    window._oobCode = oobCode;
+    // Clean URL without reload
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // Show nueva clave form (it's inside the login card, which is already visible)
+    ['loginForm','registerForm','recuperarForm'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.classList.add('hidden');
+    });
+    const nf = document.getElementById('nuevaClaveForm');
+    if(nf) nf.classList.remove('hidden');
+  }
+}
+async function confirmarNuevaClave(){
+  const pass1 = document.getElementById('nuevaClavePass').value;
+  const pass2 = document.getElementById('nuevaClavePass2').value;
+  const msg   = document.getElementById('nuevaClaveMsg');
+  const btn   = document.getElementById('btnNuevaClave');
+  if(!pass1 || pass1.length < 6){ msg.textContent='La contraseña debe tener al menos 6 caracteres.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  if(pass1 !== pass2){ msg.textContent='Las contraseñas no coinciden.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  if(!window._oobCode){ msg.textContent='Código inválido o expirado. Solicita un nuevo correo.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  btn.disabled=true; btn.textContent='Guardando...';
+  try{
+    await firebase.auth().confirmPasswordReset(window._oobCode, pass1);
+    msg.textContent='✅ Contraseña actualizada. Ya puedes iniciar sesión.';
+    msg.className='text-xs mt-1 mb-2 text-vc-700'; msg.classList.remove('hidden');
+    window._oobCode = null;
+    setTimeout(()=>showLogin(), 2000);
+  } catch(e){
+    let txt = 'Error al restablecer la contraseña.';
+    if(e.code==='auth/expired-action-code') txt='El enlace expiró. Solicita un nuevo correo de recuperación.';
+    else if(e.code==='auth/invalid-action-code') txt='Enlace inválido o ya utilizado. Solicita uno nuevo.';
+    else if(e.code==='auth/weak-password') txt='La contraseña es muy débil (mín. 6 caracteres).';
+    msg.textContent=txt; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden');
+  }
+  btn.disabled=false; btn.textContent='Guardar nueva contraseña';
+}
 function showRecuperar(){
   ['loginForm','registerForm'].forEach(id=>document.getElementById(id).classList.add('hidden'));
   document.getElementById('recuperarForm').classList.remove('hidden');
@@ -1098,7 +1157,8 @@ async function enviarRecuperacion(){
   if(!email){ msg.textContent='Ingresa tu correo.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
   btn.disabled=true; btn.textContent='Enviando...';
   try{
-    await firebase.auth().sendPasswordResetEmail(email);
+    const actionSettings = { url: window.location.origin + window.location.pathname, handleCodeInApp: false };
+    await firebase.auth().sendPasswordResetEmail(email, actionSettings);
     msg.textContent='✅ Correo enviado. Revisa tu bandeja de entrada (y carpeta de spam).';
     msg.className='text-xs mt-1 mb-2 text-vc-700'; msg.classList.remove('hidden');
   } catch(e){
