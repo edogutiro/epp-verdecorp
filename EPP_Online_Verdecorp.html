@@ -1,0 +1,3414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EPP Verdecorp · Sistema Online</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  tailwind.config = { theme:{ extend:{ colors:{
+    vc:{ 50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',500:'#22c55e',600:'#16a34a',700:'#15803d',800:'#166534',900:'#14532d' }
+  }}}}
+</script>
+<style>
+*{box-sizing:border-box}
+.acc-body{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.acc-body.open{max-height:3000px}
+.tab-pane{display:none}.tab-pane.active{display:block}
+.tab-active{background-color:#f0fdf4;color:#166534;font-weight:700}
+.input-base{width:100%;padding:.5rem .75rem;border:1px solid #d1d5db;border-radius:.5rem;
+  font-size:.875rem;outline:none;transition:.15s;background:#fff}
+.input-base:focus{border-color:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.1)}
+.input-base:disabled,.input-base[readonly]{background:#f9fafb;color:#6b7280;cursor:not-allowed}
+.label-sm{display:block;font-size:.75rem;font-weight:600;color:#374151;margin-bottom:.25rem}
+.btn-primary{display:inline-flex;align-items:center;gap:.5rem;padding:.6rem 1.2rem;
+  border:none;border-radius:.5rem;font-size:.875rem;font-weight:700;cursor:pointer;
+  transition:.15s;white-space:nowrap}
+.pulse-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;
+  box-shadow:0 0 0 0 rgba(34,197,94,.4);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.spinner{width:20px;height:20px;border:3px solid #e5e7eb;border-top-color:#16a34a;
+  border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;padding:.75rem 1.25rem;
+  border-radius:.75rem;font-size:.875rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.15);
+  display:flex;align-items:center;gap:.5rem;transition:opacity .3s;max-width:360px}
+.toast-ok{background:#166534;color:#fff}
+.toast-err{background:#dc2626;color:#fff}
+.toast-warn{background:#d97706;color:#fff}
+.kpi-detail{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.kpi-detail.open{max-height:800px}
+#firmaCanvas{cursor:crosshair;touch-action:none}
+</style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+
+<!-- ══════════════════════════════════════
+     PANTALLA FIRMA PÚBLICA (QR / LINK)
+══════════════════════════════════════ -->
+<div id="scrFirmaPublica" class="hidden fixed inset-0 bg-gray-50 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+    <div class="flex items-center justify-center gap-2 mb-4">
+      <span class="text-xl font-black text-gray-900">VERDE</span>
+      <div class="w-2 h-2 rounded-full bg-vc-500"></div>
+      <span class="text-xl font-black text-vc-700">CORP</span>
+    </div>
+    <h2 class="text-center font-bold text-gray-800 mb-1">Firma de Entrega EPP</h2>
+    <p class="text-center text-xs text-gray-400 mb-4">Firma con el dedo para confirmar que recibiste el artículo</p>
+    <div id="firmaPublicaInfo" class="space-y-2 bg-vc-50 border border-vc-200 rounded-xl p-4 mb-4 text-sm">
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Trabajador:</span><span id="firmaPublicaNombre" class="font-semibold text-right"></span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Artículo EPP:</span><span id="firmaPublicaItem" class="font-semibold text-right"></span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Talla:</span><span id="firmaPublicaTalla" class="font-semibold"></span></div>
+      <div class="flex justify-between gap-2"><span class="text-gray-500 shrink-0">Fecha:</span><span id="firmaPublicaFecha" class="font-semibold"></span></div>
+    </div>
+    <input type="hidden" id="firmaPublicaDocId">
+    <div id="firmaPublicaCanvasWrap" class="relative border-2 border-dashed border-gray-300 rounded-xl overflow-hidden bg-gray-50 mb-3">
+      <canvas id="firmaPublicaCanvas" height="160" class="block w-full" style="touch-action:none"></canvas>
+      <p id="firmaPublicaPlaceholder" class="absolute inset-0 flex items-center justify-center text-gray-300 text-sm pointer-events-none select-none">Firma aquí con el dedo</p>
+    </div>
+    <div class="flex gap-2 mb-3">
+      <button id="btnConfirmarFirmaPublica"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white flex-1 justify-center">
+        ✅ Confirmar Firma
+      </button>
+      <button id="limpiarFirmaPublica"
+        class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-700">
+        🗑 Limpiar
+      </button>
+    </div>
+    <p class="text-center text-xs text-gray-400">Sistema EPP Online — Verdecorp</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     MODAL: LINK / QR FIRMA REMOTA
+══════════════════════════════════════ -->
+<div id="modalLinkFirma" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+    <h3 class="font-bold text-gray-800 text-base mb-1">📱 Firma desde celular</h3>
+    <p id="linkFirmaDesc" class="text-sm text-gray-500 mb-4"></p>
+    <div class="flex justify-center mb-4 bg-gray-50 rounded-xl p-4">
+      <div id="linkFirmaQR"></div>
+    </div>
+    <p class="text-xs text-gray-500 font-semibold mb-1">O copia el link y envíalo por donde prefieras:</p>
+    <div class="flex gap-2 mb-4">
+      <input id="linkFirmaUrl" type="text" readonly class="input-base text-xs flex-1">
+      <button onclick="copiarLinkFirma()"
+        class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm">
+        📋 Copiar
+      </button>
+    </div>
+    <div class="flex gap-2">
+      <a id="linkFirmaWA" href="#" target="_blank"
+        class="btn-primary bg-green-500 hover:bg-green-600 text-white flex-1 justify-center" style="text-decoration:none">
+        💬 WhatsApp
+      </a>
+      <button onclick="document.getElementById('modalLinkFirma').classList.add('hidden')"
+        class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-600">
+        Cerrar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PANTALLA CONFIG FIREBASE (1ª vez)
+══════════════════════════════════════ -->
+<div id="scrConfig" class="hidden fixed inset-0 bg-gradient-to-br from-vc-900 to-vc-800
+  flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full p-8 shadow-2xl">
+    <div class="flex items-center gap-2 mb-6">
+      <span class="text-2xl font-black text-gray-900">VERDE</span>
+      <div class="w-2 h-2 rounded-full bg-vc-500"></div>
+      <span class="text-2xl font-black text-vc-700">CORP</span>
+    </div>
+    <h2 class="text-xl font-black text-vc-800 mb-1">Configuración Firebase</h2>
+    <p class="text-sm text-gray-500 mb-5">Pega aquí el objeto <code class="bg-gray-100 px-1 rounded text-xs">firebaseConfig</code>
+      de tu proyecto Firebase. Solo se hace una vez.</p>
+    <label class="label-sm">Firebase Config (JSON)</label>
+    <textarea id="configJson" rows="8" placeholder='{
+  "apiKey": "AIza...",
+  "authDomain": "epp-verdecorp.firebaseapp.com",
+  "projectId": "epp-verdecorp",
+  "storageBucket": "...",
+  "messagingSenderId": "...",
+  "appId": "..."
+}'
+      class="input-base font-mono text-xs mb-3" style="resize:vertical"></textarea>
+    <p id="configErr" class="text-red-600 text-xs mb-3 hidden"></p>
+    <button onclick="saveConfig()"
+      class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center">
+      Guardar y conectar
+    </button>
+    <p class="text-xs text-gray-400 mt-4 text-center">
+      ¿No tienes el config? Sigue las instrucciones en el README o consulta al administrador.
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PANTALLA LOGIN / REGISTRO
+══════════════════════════════════════ -->
+<div id="scrLogin" class="hidden fixed inset-0 bg-gradient-to-br from-vc-900 to-vc-800
+  flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl max-w-sm w-full p-8 shadow-2xl">
+    <div class="flex items-center justify-center gap-2 mb-2">
+      <span class="text-2xl font-black text-gray-900">VERDE</span>
+      <div class="w-2 h-2 rounded-full bg-vc-500"></div>
+      <span class="text-2xl font-black text-vc-700">CORP</span>
+    </div>
+    <p class="text-center text-xs text-gray-400 mb-6 uppercase tracking-widest">Sistema EPP Online</p>
+
+    <div id="loginForm">
+      <div class="mb-4">
+        <label class="label-sm">Correo electrónico</label>
+        <input id="loginEmail" type="email" class="input-base" placeholder="usuario@verdecorp.cl"
+          onkeydown="if(event.key==='Enter')login()">
+      </div>
+      <div class="mb-1">
+        <label class="label-sm">Contraseña</label>
+        <input id="loginPass" type="password" class="input-base" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')login()">
+      </div>
+      <p id="loginErr" class="text-red-600 text-xs mt-2 mb-3 hidden"></p>
+      <button onclick="login()" id="btnLogin"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center mt-3">
+        Ingresar
+      </button>
+      <button onclick="showRecuperar()"
+        class="w-full text-center text-xs text-gray-400 hover:text-vc-700 mt-2">
+        ¿Olvidaste tu contraseña?
+      </button>
+      <button onclick="showRegister()"
+        class="w-full text-center text-sm text-vc-700 hover:text-vc-900 mt-2 font-semibold">
+        ¿Primera vez? Crear cuenta →
+      </button>
+    </div>
+
+    <div id="registerForm" class="hidden">
+      <div class="mb-3">
+        <label class="label-sm">Nombre completo</label>
+        <input id="regNombre" type="text" class="input-base" placeholder="Juan Pérez">
+      </div>
+      <div class="mb-3">
+        <label class="label-sm">Correo electrónico</label>
+        <input id="regEmail" type="email" class="input-base" placeholder="usuario@verdecorp.cl">
+      </div>
+      <div class="mb-1">
+        <label class="label-sm">Contraseña (mín. 6 caracteres)</label>
+        <input id="regPass" type="password" class="input-base" placeholder="••••••••">
+      </div>
+      <p id="regErr" class="text-red-600 text-xs mt-2 mb-3 hidden"></p>
+      <button onclick="register()" id="btnRegister"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center mt-3">
+        Crear cuenta
+      </button>
+      <button onclick="showLogin()"
+        class="w-full text-center text-sm text-gray-500 hover:text-gray-700 mt-3">
+        ← Volver al login
+      </button>
+    </div>
+
+    <!-- Recuperar contraseña -->
+    <div id="recuperarForm" class="hidden">
+      <p class="text-sm text-gray-600 mb-4 text-center">Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.</p>
+      <div class="mb-3">
+        <label class="label-sm">Correo electrónico</label>
+        <input id="recupEmail" type="email" class="input-base" placeholder="usuario@verdecorp.cl"
+          onkeydown="if(event.key='Enter')enviarRecuperacion()">
+      </div>
+      <p id="recupMsg" class="text-xs mt-1 mb-2 hidden"></p>
+      <button onclick="enviarRecuperacion()" id="btnRecup"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center">
+        Enviar enlace
+      </button>
+      <button onclick="showLogin()"
+        class="w-full text-center text-sm text-gray-500 hover:text-gray-700 mt-3">
+        ← Volver al login
+      </button>
+    </div>
+
+    <!-- Formulario: definir nueva contraseña (cuando llega oobCode por URL) -->
+    <div id="nuevaClaveForm" class="hidden">
+      <p class="text-sm text-gray-600 mb-4 text-center">Ingresa tu nueva contraseña para continuar.</p>
+      <div class="mb-3">
+        <label class="label-sm">Nueva contraseña (mín. 6 caracteres)</label>
+        <input id="nuevaClavePass" type="password" class="input-base" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')confirmarNuevaClave()">
+      </div>
+      <div class="mb-3">
+        <label class="label-sm">Repetir contraseña</label>
+        <input id="nuevaClavePass2" type="password" class="input-base" placeholder="••••••••"
+          onkeydown="if(event.key==='Enter')confirmarNuevaClave()">
+      </div>
+      <p id="nuevaClaveMsg" class="text-xs mt-1 mb-2 hidden"></p>
+      <button onclick="confirmarNuevaClave()" id="btnNuevaClave"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white w-full justify-center">
+        Guardar nueva contraseña
+      </button>
+    </div>
+
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PANTALLA PENDIENTE DE APROBACIÓN
+══════════════════════════════════════ -->
+<div id="scrPending" class="hidden fixed inset-0 bg-gradient-to-br from-vc-900 to-vc-800
+  flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl max-w-sm w-full p-8 shadow-2xl text-center">
+    <div class="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl">⏳</div>
+    <h2 class="text-lg font-black text-gray-800 mb-2">Cuenta pendiente</h2>
+    <p class="text-sm text-gray-500 mb-6" id="pendingMsg">
+      Tu cuenta fue creada. El Administrador debe aprobarla antes de que puedas ingresar.
+    </p>
+    <button onclick="firebase.auth().signOut()"
+      class="btn-primary bg-gray-200 hover:bg-gray-300 text-gray-700 justify-center w-full">
+      Cerrar sesión
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     PANTALLA CARGANDO
+══════════════════════════════════════ -->
+<div id="scrLoading" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+  <div class="spinner mb-4" style="width:36px;height:36px;border-width:4px"></div>
+  <p class="text-sm text-gray-400">Conectando con Verdecorp...</p>
+</div>
+
+<!-- ══════════════════════════════════════
+     APLICACIÓN PRINCIPAL
+══════════════════════════════════════ -->
+<div id="scrApp" class="hidden min-h-screen">
+
+  <!-- HEADER -->
+  <header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3">
+      <!-- Logo -->
+      <div class="flex items-center gap-1.5 mr-4">
+        <span class="text-xl font-black text-gray-900 leading-none">VERDE</span>
+        <div class="w-2 h-2 rounded-full bg-vc-500 mb-0.5"></div>
+        <span class="text-xl font-black text-vc-700 leading-none">CORP</span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <div class="pulse-dot"></div>
+        <span class="text-xs text-gray-400 font-semibold">En línea</span>
+      </div>
+      <div class="flex-1"></div>
+      <!-- User badge -->
+      <div class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+        <span class="w-6 h-6 bg-vc-100 rounded-full flex items-center justify-center text-xs font-bold text-vc-800"
+          id="userInitial">—</span>
+        <div class="hidden sm:block">
+          <p class="text-xs font-semibold text-gray-700 leading-none" id="userName">—</p>
+          <p class="text-xs text-gray-400 leading-none mt-0.5" id="userRol">—</p>
+        </div>
+      </div>
+      <!-- Inventario (todos los roles) -->
+      <button id="inventarioToggleBtn" onclick="toggleInventario()"
+        class="hidden btn-primary bg-amber-600 hover:bg-amber-700 text-white text-xs">
+        📦 Inventario
+      </button>
+      <!-- Admin toggle -->
+      <button id="adminToggleBtn" onclick="toggleAdmin()"
+        class="hidden btn-primary bg-gray-900 hover:bg-gray-700 text-white text-xs">
+        🔐 Panel Admin
+      </button>
+      <!-- Notificaciones -->
+      <button onclick="solicitarPermisosNotificacion()" title="Activar notificaciones cuando un trabajador firme"
+        class="btn-primary bg-transparent border border-gray-300 hover:border-vc-400 hover:text-vc-700 text-gray-500 text-xs">
+        🔔
+      </button>
+      <!-- Logout -->
+      <button onclick="logout()"
+        class="btn-primary bg-transparent border border-gray-300 hover:border-red-400 hover:text-red-600 text-gray-500 text-xs">
+        Salir
+      </button>
+    </div>
+  </header>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+
+    <!-- PANEL INVENTARIO -->
+    <section id="inventarioPanel" class="hidden">
+      <div class="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-amber-100 bg-amber-50 flex items-center justify-between">
+          <span class="text-amber-800 font-bold text-sm flex items-center gap-2">📦 Inventario Mensual</span>
+          <span class="text-xs text-amber-600">Ingresa el conteo físico real para actualizar el stock</span>
+        </div>
+        <div class="p-4 space-y-4">
+          <div class="flex gap-3 flex-wrap items-center">
+            <select id="invBodega" onchange="renderInventario()" class="input-base w-56">
+              <option value="">Seleccionar bodega...</option>
+              <option value="BULNES (1+3)">BULNES (1+3)</option>
+              <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+              <option value="ECOCORP">ECOCORP</option>
+            </select>
+            <span class="text-xs text-gray-500">Ingresa el conteo real en la columna "Conteo Físico"</span>
+          </div>
+          <div id="invTablaWrap" class="hidden overflow-auto rounded-xl border border-gray-200">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Artículo</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Talla</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Stock App</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-amber-600 uppercase tracking-wide">Conteo Físico</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Diferencia</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="invBody"></tbody>
+            </table>
+          </div>
+          <div id="invEmpty" class="hidden text-center py-8 text-gray-400 text-sm">Selecciona una bodega para ver el inventario</div>
+          <div id="invActions" class="hidden flex items-center gap-3">
+            <button onclick="guardarInventario()"
+              class="btn-primary bg-amber-600 hover:bg-amber-700 text-white">
+              💾 Guardar Inventario
+            </button>
+            <span class="text-xs text-gray-400">Solo se actualizarán los artículos donde ingresaste un conteo</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANEL ADMIN -->
+    <section id="adminPanel" class="hidden">
+      <div class="bg-gray-900 rounded-2xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
+          <span class="text-white font-bold text-sm flex items-center gap-2">🔐 Panel de Administración</span>
+          <span class="text-xs text-gray-400">Solo visible para ti</span>
+        </div>
+        <div class="p-4 space-y-3">
+
+          <!-- ACC 1: Cargar Excel -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accExcel')"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                📥 Cargar Excel Maestro</span>
+              <svg id="accExcelIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accExcel" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3">
+                <p class="text-xs text-gray-400 mb-3">
+                  Importa el stock y los trabajadores desde el Excel a la base de datos online.
+                  ⚠️ Esto <strong class="text-yellow-400">reemplaza</strong> el stock actual en la nube.
+                </p>
+                <div class="flex items-center gap-3 flex-wrap">
+                  <label class="btn-primary bg-vc-700 hover:bg-vc-600 text-white cursor-pointer text-sm">
+                    📂 Seleccionar Excel
+                    <input type="file" class="hidden" accept=".xlsx,.xls"
+                      onclick="this.value=''" onchange="importExcel(this)">
+                  </label>
+                  <div id="importStatus" class="text-xs text-gray-400"></div>
+                </div>
+                <div id="importProgress" class="hidden mt-3">
+                  <div class="w-full bg-gray-700 rounded-full h-2">
+                    <div id="importBar" class="bg-vc-500 h-2 rounded-full transition-all" style="width:0%"></div>
+                  </div>
+                  <p id="importMsg" class="text-xs text-gray-400 mt-1"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ACC 2: Gestión de Usuarios -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accUsers'); if(document.getElementById('accUsers').classList.contains('open')) loadUsers()"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                👥 Gestión de Usuarios</span>
+              <svg id="accUsersIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accUsers" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3">
+                <p class="text-xs text-gray-400 mb-3">
+                  Aprueba cuentas nuevas y asigna roles. Un usuario debe existir en esta lista para poder usar el sistema.
+                </p>
+                <div id="usersList" class="space-y-2">
+                  <div class="text-xs text-gray-500">Cargando usuarios...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ACC 3: Diagnóstico Matriz EPP -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accDiag'); if(document.getElementById('accDiag').classList.contains('open')) renderDiag()"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                🔍 Diagnóstico Matriz EPP</span>
+              <svg id="accDiagIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accDiag" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3">
+                <div class="flex gap-2 mb-3 flex-wrap">
+                  <input id="diagSearch" type="text" placeholder="Filtrar nombre..."
+                    class="input-base text-xs w-52" oninput="renderDiag()">
+                  <select id="diagItem" class="input-base text-xs w-52" onchange="renderDiag()">
+                    <option value="">— Todos los EPP —</option>
+                  </select>
+                </div>
+                <div id="diagOutput" class="overflow-auto max-h-72 rounded-lg border border-gray-600 text-xs"></div>
+              </div>
+            </div>
+          </div>
+
+
+          <!-- ACC 4: Gestión de Trabajadores -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accWorkers'); if(document.getElementById('accWorkers').classList.contains('open')) renderWorkerAdmin()"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                🧑‍🔧 Gestión de Trabajadores</span>
+              <svg id="accWorkersIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accWorkers" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3 space-y-3">
+                <div class="flex items-center justify-between">
+                  <p class="text-xs text-gray-400">Agrega, edita o da de baja trabajadores sin reimportar el Excel.</p>
+                  <button onclick="openWorkerModal(null)" class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs">
+                    + Agregar
+                  </button>
+                </div>
+                <input id="workerAdminSearch" type="text" placeholder="Filtrar por nombre..."
+                  class="input-base text-xs w-full" oninput="renderWorkerAdmin()">
+                <div id="workerAdminList" class="space-y-1.5 max-h-72 overflow-auto"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Frecuencias de Entrega -->
+          <div class="bg-gray-800 rounded-xl overflow-hidden">
+            <button onclick="toggleAcc('accEntregas'); if(document.getElementById('accEntregas').classList.contains('open')) renderEntregasAdmin()"
+              class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-750 transition">
+              <span class="text-sm font-semibold text-white flex items-center gap-2">
+                📋 Frecuencias de Entrega</span>
+              <svg id="accEntregasIcon" class="w-4 h-4 text-gray-400 transition-transform" fill="none"
+                stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <div id="accEntregas" class="acc-body">
+              <div class="px-4 pb-4 border-t border-gray-700 pt-3 space-y-3">
+                <p class="text-xs text-gray-400">Cuántas veces al año recibe cada cargo cada EPP. Guarda los cambios al terminar.</p>
+                <div id="entregasAdminList" class="space-y-2 max-h-96 overflow-auto"></div>
+                <button onclick="saveEntregasAdmin()"
+                  class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs w-full mt-1">💾 Guardar frecuencias</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agregar nuevo EPP -->
+          <div class="bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-white">➕ Agregar nuevo EPP</p>
+              <p class="text-xs text-gray-400 mt-0.5">Asistente paso a paso: tallas, stock, frecuencias y asignación a trabajadores.</p>
+            </div>
+            <button onclick="openEppWizard()"
+              class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs flex-shrink-0">
+              Agregar EPP
+            </button>
+          </div>
+
+          <!-- Exportar Excel -->
+          <div class="bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-white">📊 Exportar Stock a Excel</p>
+              <p class="text-xs text-gray-400 mt-0.5">Descarga el stock actual de ambas bodegas tal como está en Firestore.</p>
+            </div>
+            <button onclick="exportarExcel()"
+              class="btn-primary bg-vc-700 hover:bg-vc-600 text-white text-xs flex-shrink-0">
+              ⬇ Descargar Excel
+            </button>
+          </div>
+
+          <!-- Planilla A Comprar -->
+          <div class="bg-gray-800 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-semibold text-white">🛒 Planilla "A Comprar"</p>
+              <p class="text-xs text-gray-400 mt-0.5">Calcula cuánto comprar por bodega según demanda, trabajadores y stock actual.</p>
+              <p class="text-xs text-gray-500 mt-0.5">Stock Crítico = (Trab × Entregas/año) ÷ 2 + 1 &nbsp;·&nbsp; A Comprar = máx(0, Crítico − Stock)</p>
+            </div>
+            <button onclick="descargarPlanillaComprar()"
+              class="btn-primary bg-emerald-700 hover:bg-emerald-600 text-white text-xs flex-shrink-0">
+              ⬇ Descargar Planilla
+            </button>
+          </div>
+
+
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ALERTA GLOBAL -->
+    <div id="globalAlert" class="hidden rounded-xl p-4 border text-sm font-medium flex items-center gap-3"></div>
+
+    <!-- SIN DATOS: aviso -->
+    <div id="noDataMsg" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-10 text-center">
+      <div class="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl">📦</div>
+      <p class="text-amber-800 font-bold text-base mb-1">Sin datos de stock</p>
+      <p class="text-amber-600 text-sm">El Administrador debe importar el Excel maestro desde el Panel Admin.</p>
+    </div>
+
+    <!-- ÁREA OPERATIVA -->
+    <div id="operativeArea" class="hidden space-y-5">
+
+      <!-- TABS -->
+      <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-1.5 flex gap-1 w-fit">
+        <button id="btnTabE" onclick="switchTab('tabE')"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all
+          text-gray-500 hover:bg-gray-100">
+          <span>📦</span> Registro de Entregas
+        </button>
+        <button id="btnTabI" onclick="switchTab('tabI')"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all
+          text-gray-500 hover:bg-gray-100">
+          <span>🚚</span> Entradas de Camión
+        </button>
+        <button id="btnTabH" onclick="switchTab('tabH')"
+          class="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all
+          text-gray-500 hover:bg-gray-100">
+          <span>📋</span> Historial
+        </button>
+      </div>
+
+      <!-- TAB: ENTREGAS -->
+      <div id="tabE" class="tab-pane active">
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <h3 class="font-bold text-gray-800 text-base mb-5 flex items-center gap-2">
+            <span class="w-8 h-8 bg-vc-100 text-vc-700 rounded-lg flex items-center justify-center">📦</span>
+            Registro de Entrega de EPP al Trabajador
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div>
+              <label class="label-sm">Bodega de Origen *</label>
+              <select id="entBodega" onchange="onEntBodega()" class="input-base">
+                <option value="">Seleccionar bodega...</option>
+                <option value="BULNES (1+3)">BULNES (1+3)</option>
+                <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+                <option value="ECOCORP">ECOCORP</option>
+              </select>
+            </div>
+            <div>
+              <label class="label-sm">Trabajador *</label>
+              <input id="entBuscarTrab" type="text" placeholder="🔍 Buscar trabajador..." class="input-base mb-1.5" oninput="filtrarTrabajador()" autocomplete="off">
+              <select id="entTrabajador" onchange="onEntTrabajador()" class="input-base">
+                <option value="">Seleccionar trabajador...</option>
+              </select>
+              <div id="entOtroWrap" class="hidden mt-1.5">
+                <input id="entOtroNombre" type="text" placeholder="Nombre completo (visita, cliente...)"
+                  class="input-base" oninput="onEntOtroNombreInput()">
+              </div>
+            </div>
+            <div>
+              <label class="label-sm">Artículo EPP *</label>
+              <select id="entArticulo" onchange="onEntArticulo()" class="input-base">
+                <option value="">Seleccionar artículo...</option>
+              </select>
+              <div id="entregasInfo" class="hidden mt-1.5 px-3 py-2 bg-vc-50 border border-vc-200 rounded-lg text-xs text-vc-800 leading-relaxed"></div>
+            </div>
+            <div>
+              <label class="label-sm" id="entTallaLabel">Talla — Autodetectada de Matriz EPP</label>
+              <div class="flex gap-2 items-center">
+                <input id="entTalla" type="text" readonly placeholder="—"
+                  class="input-base bg-gray-50 cursor-not-allowed text-gray-600 flex-1"
+                  oninput="onEntTallaEdit()"/>
+                <button id="btnEditTalla" onclick="toggleTallaEdit()"
+                  title="Solo admins pueden editar la talla"
+                  class="hidden w-9 h-9 flex items-center justify-center rounded-lg
+                  border border-gray-300 hover:border-orange-400 hover:text-orange-600 text-gray-400 transition">
+                  ✏️
+                </button>
+              </div>
+              <!-- Guardar talla permanentemente (solo admin, solo en modo edición) -->
+              <div id="guardarTallaWrap" class="hidden mt-2 flex items-center gap-2 bg-vc-50
+                border border-vc-200 rounded-lg px-3 py-2">
+                <input type="checkbox" id="guardarTallaCheck"
+                  class="w-4 h-4 accent-vc-700 cursor-pointer">
+                <label for="guardarTallaCheck" class="text-xs text-vc-800 font-semibold cursor-pointer"
+                  id="guardarTallaLabel">
+                  💾 Guardar esta talla en el perfil del trabajador
+                </label>
+              </div>
+            </div>
+            <div>
+              <label class="label-sm">Stock Disponible</label>
+              <div id="entStockInfo" class="input-base bg-gray-50 text-gray-500 cursor-not-allowed flex items-center">—</div>
+            </div>
+            <div>
+              <label class="label-sm">Cantidad a Entregar *</label>
+              <input id="entCantidad" type="number" min="1" placeholder="1" class="input-base"
+                oninput="onEntCantidad()">
+            </div>
+            <div>
+              <label class="label-sm">Marca / Modelo</label>
+              <input id="entMarca" type="text" placeholder="Ej: 3M / Peltor X-1" class="input-base">
+            </div>
+            <div>
+              <label class="label-sm">Motivo / Recambio</label>
+              <select id="entRecambio" class="input-base">
+                <option value="Primera entrega">Primera entrega</option>
+                <option value="EPP roto">EPP roto</option>
+                <option value="EPP gastado">EPP gastado</option>
+                <option value="EPP extraviado">EPP extraviado</option>
+                <option value="EPP perdió forma">EPP perdió forma</option>
+                <option value="Pérdida de pieza">Pérdida de pieza</option>
+                <option value="Incompatibilidad">Incompatibilidad</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Perfil del trabajador -->
+          <div id="workerProfile" class="hidden mt-5 p-4 bg-vc-50 border border-vc-200 rounded-xl">
+            <p class="text-xs font-bold text-vc-700 uppercase tracking-wide mb-2">
+              Tallas asignadas — <span id="profileName"></span></p>
+            <div id="profileTallas" class="flex flex-wrap gap-2"></div>
+          </div>
+
+          <div class="flex items-center gap-3 mt-6">
+            <button onclick="registrarEntrega()" id="btnEntrega"
+              class="btn-primary bg-vc-700 hover:bg-vc-800 text-white">
+              ✅ Registrar Entrega
+            </button>
+            <button onclick="limpiarEntrega()"
+              class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm">
+              Limpiar
+            </button>
+            <span id="entConfirm" class="text-sm font-semibold text-vc-700 hidden"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: ENTRADAS DE CAMIÓN -->
+      <div id="tabI" class="tab-pane">
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <h3 class="font-bold text-gray-800 text-base mb-5 flex items-center gap-2">
+            <span class="w-8 h-8 bg-blue-100 text-blue-700 rounded-lg flex items-center justify-center">🚚</span>
+            Entrada de EPP desde Camión / Proveedor
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div>
+              <label class="label-sm">Bodega de Destino *</label>
+              <select id="camBodega" onchange="onCamBodega()" class="input-base">
+                <option value="">Seleccionar bodega...</option>
+                <option value="BULNES (1+3)">BULNES (1+3)</option>
+                <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+                <option value="ECOCORP">ECOCORP</option>
+              </select>
+            </div>
+            <div>
+              <label class="label-sm">Artículo EPP *</label>
+              <input id="camBuscarArt" type="text" placeholder="🔍 Buscar artículo..." class="input-base mb-1.5" oninput="filtrarCamArticulo()" autocomplete="off">
+              <select id="camArticulo" onchange="onCamArticulo()" class="input-base">
+                <option value="">Seleccionar artículo...</option>
+              </select>
+            </div>
+            <div>
+              <label class="label-sm">Stock Actual</label>
+              <div id="camStockInfo" class="input-base bg-gray-50 text-gray-500 cursor-not-allowed">—</div>
+            </div>
+            <div>
+              <label class="label-sm">Cantidad Recibida *</label>
+              <input id="camCantidad" type="number" min="1" placeholder="1" class="input-base">
+            </div>
+            <div>
+              <label class="label-sm">Proveedor / Referencia</label>
+              <input id="camProveedor" type="text" placeholder="Ej: Factura N° 123" class="input-base">
+            </div>
+          </div>
+          <div class="flex items-center gap-3 mt-6">
+            <button onclick="registrarEntrada()" id="btnEntrada"
+              class="btn-primary bg-blue-700 hover:bg-blue-800 text-white">
+              ✅ Registrar Entrada
+            </button>
+            <button onclick="limpiarEntrada()"
+              class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm">
+              Limpiar
+            </button>
+            <span id="camConfirm" class="text-sm font-semibold text-blue-700 hidden"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRASPASO ENTRE BODEGAS -->
+      <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mt-4">
+        <h3 class="font-bold text-gray-800 text-base mb-1">🔄 Traspaso entre Bodegas</h3>
+        <p class="text-xs text-gray-400 mb-4">Mueve stock de una bodega a otra. Descuenta en origen y suma en destino.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label class="label-sm">Bodega Origen *</label>
+            <select id="trpOrigen" onchange="onTrpOrigen()" class="input-base">
+              <option value="">Seleccionar bodega...</option>
+              <option value="BULNES (1+3)">BULNES (1+3)</option>
+              <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+              <option value="ECOCORP">ECOCORP</option>
+            </select>
+          </div>
+          <div>
+            <label class="label-sm">Artículo EPP *</label>
+            <input id="trpBuscarArt" type="text" placeholder="🔍 Buscar artículo..." class="input-base mb-1.5" oninput="filtrarTrpArticulo()" autocomplete="off">
+            <select id="trpArticulo" onchange="onTrpArticulo()" class="input-base">
+              <option value="">Seleccionar artículo...</option>
+            </select>
+          </div>
+          <div>
+            <label class="label-sm">Stock disponible en origen</label>
+            <div id="trpStockInfo" class="input-base bg-gray-50 text-gray-500">—</div>
+          </div>
+          <div>
+            <label class="label-sm">Bodega Destino *</label>
+            <select id="trpDestino" class="input-base">
+              <option value="">Seleccionar bodega...</option>
+              <option value="BULNES (1+3)">BULNES (1+3)</option>
+              <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+              <option value="ECOCORP">ECOCORP</option>
+            </select>
+          </div>
+          <div>
+            <label class="label-sm">Cantidad a traspasar *</label>
+            <input id="trpCantidad" type="number" min="1" class="input-base" placeholder="0">
+          </div>
+          <div>
+            <label class="label-sm">Motivo (opcional)</label>
+            <input id="trpMotivo" type="text" class="input-base" placeholder="Ej: apoyo por falta de stock">
+          </div>
+        </div>
+        <div class="flex items-center gap-3 mt-4">
+          <button onclick="registrarTraspaso()" class="btn-primary bg-vc-700 hover:bg-vc-600 text-white">
+            🔄 Confirmar Traspaso
+          </button>
+          <button onclick="limpiarTraspaso()" class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm">
+            Limpiar
+          </button>
+          <span id="trpConfirm" class="text-sm font-semibold text-vc-700 hidden"></span>
+        </div>
+      </div>
+
+      <!-- TAB: HISTORIAL -->
+      <div id="tabH" class="tab-pane">
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <h3 class="font-bold text-gray-800 text-base mb-4 flex items-center gap-2">
+            <span class="w-8 h-8 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center">📋</span>
+            Historial y Trazabilidad
+          </h3>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <input type="text" id="histSearch" placeholder="Buscar..." class="input-base col-span-2 sm:col-span-1"
+              oninput="renderHistorial()">
+            <select id="histArticulo" onchange="renderHistorial()" class="input-base">
+              <option value="">Todos los EPP</option>
+            </select>
+            <select id="histTrabajador" onchange="renderHistorial()" class="input-base">
+              <option value="">Todos los trabajadores</option>
+            </select>
+            <select id="histTipo" onchange="renderHistorial()" class="input-base">
+              <option value="">Todos los tipos</option>
+              <option value="ENTREGA">Solo Entregas</option>
+              <option value="ENTRADA">Solo Entradas de Camión</option>
+              <option value="TRASPASO">Solo Traspasos</option>
+            </select>
+          </div>
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div class="flex items-center gap-3">
+              <button onclick="clearHistFiltros()" class="text-xs text-blue-500 hover:text-blue-700 underline">
+                Limpiar filtros</button>
+              <button onclick="abrirModalActa()"
+                class="flex items-center gap-1.5 text-xs text-vc-700 hover:text-vc-900 font-semibold
+                border border-vc-300 hover:border-vc-500 bg-vc-50 hover:bg-vc-100 px-3 py-1.5 rounded-lg transition">
+                📄 Generar Acta de Entrega
+              </button>
+            </div>
+
+          </div>
+          <div class="overflow-x-auto rounded-xl border border-gray-100">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fecha</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Tipo</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Artículo</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Talla</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Bodega</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Trabajador</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cant.</th>
+                  <th class="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Usuario</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Firma</th>
+                  <th class="text-center px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide admin-only hidden"></th>
+                </tr>
+              </thead>
+              <tbody id="histBody"></tbody>
+            </table>
+          </div>
+          <p class="text-xs text-gray-400 mt-2" id="histCount"></p>
+        </div>
+      </div>
+
+    </div><!-- /operativeArea -->
+  </div><!-- /content -->
+</div><!-- /scrApp -->
+
+<!-- ══════════════════════════════════════
+     MODAL: FIRMA DIGITAL DEL TRABAJADOR
+══════════════════════════════════════ -->
+<div id="modalFirma" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+    <h3 class="font-bold text-gray-800 text-base mb-1 flex items-center gap-2">
+      ✍️ Firma del Trabajador
+    </h3>
+    <p id="firmaSubtitulo" class="text-sm text-gray-500 mb-4"></p>
+    <div class="relative border-2 border-dashed border-gray-300 rounded-xl overflow-hidden bg-gray-50">
+      <canvas id="firmaCanvas" height="180"
+        class="block w-full" style="touch-action:none;display:block"></canvas>
+      <p id="firmaPlaceholder" class="absolute inset-0 flex items-center justify-center
+        text-gray-300 text-sm pointer-events-none select-none">
+        Firmar aquí con el mouse o dedo
+      </p>
+    </div>
+    <div class="flex gap-3 mt-4 flex-wrap">
+      <button onclick="confirmarFirma()"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white flex-1 justify-center">
+        ✅ Confirmar Entrega
+      </button>
+      <button onclick="limpiarCanvas()"
+        class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-700">
+        🗑 Limpiar
+      </button>
+      <button onclick="enviarACelular()"
+        class="btn-primary bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-sm">
+        📱 Enviar a celular
+      </button>
+      <button onclick="cancelarFirma()"
+        class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-500 text-sm">
+        Omitir firma
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     MODAL: GENERAR ACTA DE ENTREGA
+══════════════════════════════════════ -->
+<div id="modalActa" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+    <h3 class="font-bold text-gray-800 text-base mb-1">📄 Acta de Entrega de EPP</h3>
+    <p class="text-sm text-gray-500 mb-4">Selecciona un trabajador para generar el registro imprimible con todas sus entregas y firmas.</p>
+    <label class="label-sm">Trabajador</label>
+    <select id="actaTrabajador" class="input-base mb-5">
+      <option value="">Seleccionar trabajador...</option>
+    </select>
+    <div class="flex gap-3">
+      <button onclick="generarActa()"
+        class="btn-primary bg-vc-700 hover:bg-vc-800 text-white flex-1 justify-center">
+        🖨 Generar Acta
+      </button>
+      <button onclick="document.getElementById('modalActa').classList.add('hidden')"
+        class="btn-primary bg-gray-100 hover:bg-gray-200 text-gray-600">
+        Cerrar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="toast hidden"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// ESTADO GLOBAL
+// ══════════════════════════════════════════════════════
+let db, auth;
+const S = {
+  user: null, userDoc: null, rol: null, adminOpen: false,
+  stock: { 'BULNES (1+3)': [], 'ROMERAL (Unificada)': [], 'ECOCORP': [] },
+  stockDocs: {},      // item key → Firestore doc id
+  workers: [],
+  workerDocs: {},     // index → Firestore doc id
+  hist: [],
+  allUsers: [],
+  entregas: {},       // itemName → frecuencia string (de hoja ENTREGAS)
+  unsubs: []
+};
+const BODEGAS = ['BULNES (1+3)', 'ROMERAL (Unificada)', 'ECOCORP'];
+
+// ══════════════════════════════════════════════════════
+// UTILIDADES
+// ══════════════════════════════════════════════════════
+function norm(s){ return s==null?'':String(s).trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function fmt(n){ return Number(n||0).toLocaleString('es-CL'); }
+
+function showToast(msg, type='ok', dur=3500){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='toast toast-'+(type==='error'?'err':type==='warn'?'warn':'ok');
+  el.classList.remove('hidden');
+  setTimeout(()=>el.classList.add('hidden'), dur);
+}
+
+function setScreen(id){
+  ['scrConfig','scrLogin','scrPending','scrLoading','scrApp']
+    .forEach(s=>document.getElementById(s).classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function showGlobalAlert(type, msg){
+  const el=document.getElementById('globalAlert');
+  el.className='rounded-xl p-4 border text-sm font-medium flex items-center gap-3';
+  if(type==='warn'){el.classList.add('bg-amber-50','border-amber-200','text-amber-800'); el.innerHTML='⚠️ '+msg;}
+  else if(type==='ok'){el.classList.add('bg-vc-50','border-vc-200','text-vc-800'); el.innerHTML='✅ '+msg;}
+  else{el.classList.add('bg-red-50','border-red-200','text-red-800'); el.innerHTML='❌ '+msg;}
+  el.classList.remove('hidden');
+  setTimeout(()=>el.classList.add('hidden'),5000);
+}
+
+// ══════════════════════════════════════════════════════
+// FIREBASE CONFIG
+// ══════════════════════════════════════════════════════
+function saveConfig(){
+  const raw=document.getElementById('configJson').value.trim();
+  let cfg;
+  try {
+    // Allow pasting the full JS object or just JSON
+    const cleaned=raw.replace(/\/\/.*/g,'').replace(/(\w+)\s*:/g,'"$1":').replace(/'/g,'"');
+    cfg=JSON.parse(raw.startsWith('{')?raw:cleaned);
+  } catch(e){
+    try { cfg=eval('('+raw+')'); } catch(e2){
+      document.getElementById('configErr').textContent='JSON inválido: '+e2.message;
+      document.getElementById('configErr').classList.remove('hidden'); return;
+    }
+  }
+  if(!cfg||!cfg.apiKey||!cfg.projectId){
+    document.getElementById('configErr').textContent='Falta apiKey o projectId en el config.';
+    document.getElementById('configErr').classList.remove('hidden'); return;
+  }
+  localStorage.setItem('vc_fb_config', JSON.stringify(cfg));
+  document.getElementById('configErr').classList.add('hidden');
+  initFirebase(cfg);
+}
+
+function resetConfig(){
+  localStorage.removeItem('vc_fb_config');
+  setScreen('scrConfig');
+}
+
+// ══════════════════════════════════════════════════════
+// FIREBASE INIT
+// ══════════════════════════════════════════════════════
+function initFirebase(cfg){
+  setScreen('scrLoading');
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    db   = firebase.firestore();
+    auth = firebase.auth();
+    auth.onAuthStateChanged(onAuthChanged);
+    _checkOobCode();
+  } catch(e){
+    showToast('Error al inicializar Firebase: '+e.message,'error',6000);
+    setScreen('scrLogin');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// AUTH FLOW
+// ══════════════════════════════════════════════════════
+async function onAuthChanged(user){
+  teardownListeners();
+  if(!user){ setScreen('scrLogin'); return; }
+  // Si es sesión anónima (para firma por QR), no procesar como usuario normal
+  if(user.isAnonymous){ return; }
+  S.user = user;
+  try {
+    const docSnap = await db.collection('users').doc(user.uid).get();
+    if(!docSnap.exists){
+      // New user — check if any admin exists
+      const adminSnap = await db.collection('users').where('rol','==','admin').limit(1).get();
+      const rol = adminSnap.empty ? 'admin' : 'pendiente';
+      const userDoc = { email:user.email, nombre:user.displayName||user.email.split('@')[0], rol, createdAt:firebase.firestore.FieldValue.serverTimestamp() };
+      await db.collection('users').doc(user.uid).set(userDoc);
+      S.userDoc = userDoc; S.rol = rol;
+    } else {
+      S.userDoc = docSnap.data(); S.rol = S.userDoc.rol;
+    }
+    if(S.rol==='pendiente'){ setScreen('scrPending'); return; }
+    loadApp();
+  } catch(e){
+    showToast('Error al verificar usuario: '+e.message,'error',6000);
+    setScreen('scrLogin');
+  }
+}
+
+async function login(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass =document.getElementById('loginPass').value;
+  const err  =document.getElementById('loginErr');
+  const btn  =document.getElementById('btnLogin');
+  err.classList.add('hidden');
+  if(!email||!pass){ err.textContent='Completa todos los campos.'; err.classList.remove('hidden'); return; }
+  btn.innerHTML='<div class="spinner"></div> Ingresando...'; btn.disabled=true;
+  try {
+    await auth.signInWithEmailAndPassword(email, pass);
+  } catch(e){
+    btn.innerHTML='Ingresar'; btn.disabled=false;
+    err.textContent = e.code==='auth/wrong-password'?'Contraseña incorrecta.':
+      e.code==='auth/user-not-found'?'Correo no registrado.':
+      e.code==='auth/invalid-email'?'Correo inválido.':'Error: '+e.message;
+    err.classList.remove('hidden');
+  }
+}
+
+async function register(){
+  const nombre=document.getElementById('regNombre').value.trim();
+  const email =document.getElementById('regEmail').value.trim();
+  const pass  =document.getElementById('regPass').value;
+  const err   =document.getElementById('regErr');
+  const btn   =document.getElementById('btnRegister');
+  err.classList.add('hidden');
+  if(!nombre||!email||!pass){ err.textContent='Completa todos los campos.'; err.classList.remove('hidden'); return; }
+  if(pass.length<6){ err.textContent='La contraseña debe tener al menos 6 caracteres.'; err.classList.remove('hidden'); return; }
+  btn.innerHTML='<div class="spinner"></div> Creando...'; btn.disabled=true;
+  try {
+    const cred = await auth.createUserWithEmailAndPassword(email,pass);
+    await cred.user.updateProfile({displayName:nombre});
+  } catch(e){
+    btn.innerHTML='Crear cuenta'; btn.disabled=false;
+    err.textContent = e.code==='auth/email-already-in-use'?'Este correo ya está registrado.':
+      e.code==='auth/invalid-email'?'Correo inválido.':'Error: '+e.message;
+    err.classList.remove('hidden');
+  }
+}
+
+async function logout(){
+  teardownListeners();
+  await auth.signOut();
+}
+
+function showRegister(){ ['loginForm','recuperarForm'].forEach(id=>document.getElementById(id).classList.add('hidden')); document.getElementById('registerForm').classList.remove('hidden'); }
+
+function _checkOobCode(){
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('mode');
+  const oobCode = params.get('oobCode');
+  if(mode === 'resetPassword' && oobCode){
+    window._oobCode = oobCode;
+    // Clean URL without reload
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // Show nueva clave form (it's inside the login card, which is already visible)
+    ['loginForm','registerForm','recuperarForm'].forEach(id=>{
+      const el=document.getElementById(id); if(el) el.classList.add('hidden');
+    });
+    const nf = document.getElementById('nuevaClaveForm');
+    if(nf) nf.classList.remove('hidden');
+  }
+}
+async function confirmarNuevaClave(){
+  const pass1 = document.getElementById('nuevaClavePass').value;
+  const pass2 = document.getElementById('nuevaClavePass2').value;
+  const msg   = document.getElementById('nuevaClaveMsg');
+  const btn   = document.getElementById('btnNuevaClave');
+  if(!pass1 || pass1.length < 6){ msg.textContent='La contraseña debe tener al menos 6 caracteres.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  if(pass1 !== pass2){ msg.textContent='Las contraseñas no coinciden.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  if(!window._oobCode){ msg.textContent='Código inválido o expirado. Solicita un nuevo correo.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  btn.disabled=true; btn.textContent='Guardando...';
+  try{
+    await firebase.auth().confirmPasswordReset(window._oobCode, pass1);
+    msg.textContent='✅ Contraseña actualizada. Ya puedes iniciar sesión.';
+    msg.className='text-xs mt-1 mb-2 text-vc-700'; msg.classList.remove('hidden');
+    window._oobCode = null;
+    setTimeout(()=>showLogin(), 2000);
+  } catch(e){
+    let txt = 'Error al restablecer la contraseña.';
+    if(e.code==='auth/expired-action-code') txt='El enlace expiró. Solicita un nuevo correo de recuperación.';
+    else if(e.code==='auth/invalid-action-code') txt='Enlace inválido o ya utilizado. Solicita uno nuevo.';
+    else if(e.code==='auth/weak-password') txt='La contraseña es muy débil (mín. 6 caracteres).';
+    msg.textContent=txt; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden');
+  }
+  btn.disabled=false; btn.textContent='Guardar nueva contraseña';
+}
+function showRecuperar(){
+  ['loginForm','registerForm'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+  document.getElementById('recuperarForm').classList.remove('hidden');
+  document.getElementById('recupMsg').classList.add('hidden');
+  document.getElementById('recupEmail').value='';
+}
+async function enviarRecuperacion(){
+  const email=document.getElementById('recupEmail').value.trim();
+  const msg=document.getElementById('recupMsg');
+  const btn=document.getElementById('btnRecup');
+  if(!email){ msg.textContent='Ingresa tu correo.'; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden'); return; }
+  btn.disabled=true; btn.textContent='Enviando...';
+  try{
+    const actionSettings = { url: window.location.origin + window.location.pathname, handleCodeInApp: false };
+    await firebase.auth().sendPasswordResetEmail(email, actionSettings);
+    msg.textContent='✅ Correo enviado. Revisa tu bandeja de entrada (y carpeta de spam).';
+    msg.className='text-xs mt-1 mb-2 text-vc-700'; msg.classList.remove('hidden');
+  } catch(e){
+    let txt='Error al enviar el correo.';
+    if(e.code==='auth/user-not-found') txt='No existe una cuenta con ese correo.';
+    else if(e.code==='auth/invalid-email') txt='Correo inválido.';
+    msg.textContent=txt; msg.className='text-xs mt-1 mb-2 text-red-500'; msg.classList.remove('hidden');
+  }
+  btn.disabled=false; btn.textContent='Enviar enlace';
+}
+function showLogin(){ ['registerForm','recuperarForm'].forEach(id=>document.getElementById(id).classList.add('hidden')); document.getElementById('loginForm').classList.remove('hidden'); }
+
+// ══════════════════════════════════════════════════════
+// CARGAR APP
+// ══════════════════════════════════════════════════════
+function loadApp(){
+  // Header
+  const nombre = S.userDoc.nombre || S.user.email;
+  document.getElementById('userName').textContent = nombre;
+  document.getElementById('userRol').textContent  = S.rol==='admin'?'Administrador':'Operativo';
+  document.getElementById('userInitial').textContent = nombre.charAt(0).toUpperCase();
+
+  // Botón inventario para todos los roles
+  document.getElementById('inventarioToggleBtn').classList.remove('hidden');
+  // Botones solo admin
+  if(S.rol==='admin'){
+    document.getElementById('adminToggleBtn').classList.remove('hidden');
+    document.getElementById('btnEditTalla').classList.remove('hidden');
+  }
+
+  setScreen('scrApp');
+  setupListeners();
+}
+
+// ══════════════════════════════════════════════════════
+// FIRESTORE LISTENERS (TIEMPO REAL)
+// ══════════════════════════════════════════════════════
+function setupListeners(){
+  // Stock listener
+  const unsubStock = db.collection('stock').onSnapshot(snap=>{
+    S.stock = { 'BULNES (1+3)':[], 'ROMERAL (Unificada)':[], 'ECOCORP':[] };
+    S.stockDocs = {};
+    snap.forEach(doc=>{
+      const d=doc.data(); d._id=doc.id;
+      if(S.stock[d.bodega]) S.stock[d.bodega].push(d);
+      S.stockDocs[doc.id]=doc.id;
+    });
+    onStockUpdated();
+  }, err=>console.error('Stock listener error:',err));
+
+  // Workers listener
+  const unsubWorkers = db.collection('workers').onSnapshot(snap=>{
+    S.workers=[];
+    snap.forEach(doc=>{ const d=doc.data(); d._id=doc.id; S.workers.push(d); });
+    S.workers.sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'));
+    onWorkersUpdated();
+  }, err=>console.error('Workers listener error:',err));
+
+  // Historial listener (last 300)
+  let _histPrevFirmas = {}; // track firma state to detect new signatures
+  const unsubHist = db.collection('historial')
+    .orderBy('fecha','desc').limit(300)
+    .onSnapshot(snap=>{
+      S.hist=[];
+      snap.docChanges().forEach(change=>{
+        // Detect when a firma is added to an existing doc (worker signed remotely)
+        if(change.type==='modified'){
+          const prev = _histPrevFirmas[change.doc.id];
+          const next = change.doc.data();
+          if(!prev && next.firma){
+            // First time we see it — might be initial load, skip
+          } else if(prev===false && next.firma){
+            // Was unsigned, now has firma → notify!
+            const quien = next.trabajador || 'Un trabajador';
+            const epp   = next.item || 'EPP';
+            showToast(`✅ ${quien} firmó la entrega de ${epp} desde su celular.`, 'ok', 6000);
+            _notificarFirma(next);
+          }
+          _histPrevFirmas[change.doc.id] = !!next.firma;
+        }
+      });
+      // Build initial firma state map on first load
+      snap.forEach(doc=>{
+        const d=doc.data(); d._id=doc.id; S.hist.push(d);
+        if(!(_histPrevFirmas[doc.id] !== undefined))
+          _histPrevFirmas[doc.id] = !!d.firma;
+      });
+      onHistUpdated();
+    }, err=>console.error('Hist listener error:',err));
+
+  // Criterios de entrega — listener en tiempo real
+  const unsubConfig = db.collection('config').doc('entregas')
+    .onSnapshot(doc=>{
+      S.entregas = (doc.exists && doc.data().data) ? doc.data().data : {};
+    }, ()=>{ S.entregas={}; });
+
+  S.unsubs=[unsubStock, unsubWorkers, unsubHist, unsubConfig];
+}
+
+function _notificarFirma(doc){
+  // Browser push notification (si el usuario dio permiso)
+  if(!('Notification' in window)) return;
+  const send=()=>{
+    new Notification('✅ Firma recibida — EPP Verdecorp', {
+      body: `${doc.trabajador||'Trabajador'} firmó la entrega de ${doc.item||'EPP'}`,
+      icon: 'https://epp-verdecorp.netlify.app/favicon.ico'
+    });
+  };
+  if(Notification.permission==='granted'){ send(); }
+  else if(Notification.permission!=='denied'){
+    Notification.requestPermission().then(p=>{ if(p==='granted') send(); });
+  }
+}
+
+function solicitarPermisosNotificacion(){
+  if(!('Notification' in window)){ showToast('Tu navegador no soporta notificaciones.','warn'); return; }
+  Notification.requestPermission().then(p=>{
+    if(p==='granted') showToast('✅ Notificaciones activadas. Te avisaremos cuando un trabajador firme.','ok',5000);
+    else showToast('Notificaciones bloqueadas. Puedes activarlas en la configuración del navegador.','warn',5000);
+  });
+}
+
+function teardownListeners(){
+  S.unsubs.forEach(u=>{ try{u();}catch(e){} });
+  S.unsubs=[];
+}
+
+// ══════════════════════════════════════════════════════
+// ON DATA UPDATES
+// ══════════════════════════════════════════════════════
+function onStockUpdated(){
+  const hasData = BODEGAS.some(b=>S.stock[b].length>0);
+  document.getElementById('operativeArea').classList.toggle('hidden',!hasData);
+  document.getElementById('noDataMsg').classList.toggle('hidden',hasData);
+  if(!hasData) return;
+  // Refresh formulario de entrega si tiene bodega seleccionada
+  const entB = document.getElementById('entBodega').value;
+  if(entB){ refreshEntArticulo(entB); refreshEntStock(); }
+  // Refresh formulario de entrada de camión
+  const camB = document.getElementById('camBodega').value;
+  if(camB){ refreshCamArticulo(camB); refreshCamStock(); }
+  // Refresh inventario si está abierto
+  const invPanel = document.getElementById('inventarioPanel');
+  if(invPanel && !invPanel.classList.contains('hidden')) renderInventario();
+}
+
+function onWorkersUpdated(){
+  fillWorkerSel();
+  renderDiag();
+  renderWorkerAdmin();
+}
+
+function onHistUpdated(){
+  renderHistorial();
+  updateHistFiltros();
+}
+
+// ══════════════════════════════════════════════════════
+// IMPORTAR EXCEL A FIRESTORE (Admin)
+// ══════════════════════════════════════════════════════
+async function importExcel(inp){
+  const f=inp.files[0]; if(!f) return;
+  const prog=document.getElementById('importProgress');
+  const bar=document.getElementById('importBar');
+  const msg=document.getElementById('importMsg');
+  const status=document.getElementById('importStatus');
+  prog.classList.remove('hidden');
+  bar.style.width='5%'; msg.textContent='Leyendo Excel...'; status.textContent='';
+
+  try {
+    const data = await f.arrayBuffer();
+    const wb = XLSX.read(new Uint8Array(data),{type:'array',cellFormula:false,cellNF:false,cellStyles:false});
+    // Diagnóstico: mostrar nombres exactos de hojas
+    const sheetNames = wb.SheetNames;
+    status.textContent = 'Hojas encontradas: ' + sheetNames.join(' | ');
+
+    bar.style.width='15%'; msg.textContent='Parseando stock BULNES...';
+    const stockBulnes   = parseStockSheet(wb, 'BULNES (1+3)');
+    bar.style.width='25%'; msg.textContent='Parseando stock ROMERAL...';
+    const stockRomeral  = parseStockSheet(wb, 'ROMERAL (Unificada)');
+    bar.style.width='32%'; msg.textContent='Parseando stock ECOCORP...';
+    // Buscar hoja ECOCORP con nombre exacto o aproximado
+    const ecocorpSheet = wb.SheetNames.find(n=>n.trim().toUpperCase()==='ECOCORP') || 'ECOCORP';
+    const stockEcocorp  = parseStockSheet(wb, ecocorpSheet);
+    bar.style.width='35%'; msg.textContent='Parseando Matriz EPP...';
+    const workers       = parseMatriz(wb);
+    bar.style.width='42%'; msg.textContent='Parseando hoja ENTREGAS...';
+    const entregasMap   = parseEntregas(wb);
+
+    const allItems = [...stockBulnes, ...stockRomeral, ...stockEcocorp];
+    bar.style.width='50%'; msg.textContent=`Subiendo ${allItems.length} artículos...`;
+
+    // Delete existing stock docs
+    const existingSnap = await db.collection('stock').get();
+    const delBatch = db.batch();
+    existingSnap.forEach(d=>delBatch.delete(d.ref));
+    await delBatch.commit();
+
+    // Batch write stock (500 per batch)
+    for(let i=0;i<allItems.length;i+=400){
+      const chunk=allItems.slice(i,i+400);
+      const batch=db.batch();
+      chunk.forEach(item=>{ const ref=db.collection('stock').doc(); batch.set(ref,item); });
+      await batch.commit();
+      bar.style.width=String(50+Math.round((i/allItems.length)*30))+'%';
+    }
+
+    bar.style.width='82%'; msg.textContent=`Sincronizando ${workers.length} trabajadores...`;
+
+    // MERGE workers: actualizar existentes por nombre, crear nuevos, preservar APP-managed
+    const existingW = await db.collection('workers').get();
+    const existingMap = {};
+    existingW.forEach(d=>{ existingMap[norm(d.data().nombre||'')] = d; });
+
+    for(let i=0;i<workers.length;i+=400){
+      const chunk=workers.slice(i,i+400);
+      const batch=db.batch();
+      chunk.forEach(w=>{
+        const key=norm(w.nombre||'');
+        if(existingMap[key]){
+          // Actualizar tallas/cargo/sede pero preservar activo y campos APP
+          batch.update(existingMap[key].ref, {nombre:w.nombre,cargo:w.cargo,sede:w.sede,tallas:w.tallas});
+        } else {
+          const ref=db.collection('workers').doc();
+          batch.set(ref,{...w,activo:true});
+        }
+      });
+      await batch.commit();
+    }
+
+    // Guardar criterios de entrega
+    const nCargos=Object.keys(entregasMap).length;
+    const nItems=Object.values(entregasMap).reduce((a,v)=>a+Object.keys(v).length,0);
+    showToast(`Hoja Entregas: ${nCargos} cargos, ${nItems} artículos encontrados.`, nItems>0?'ok':'warn', 6000);
+    await db.collection('config').doc('entregas').set({data: entregasMap});
+    S.entregas = entregasMap;
+
+    bar.style.width='100%'; msg.textContent='¡Importación completada!';
+    const nEntregas=Object.keys(entregasMap).length;
+    status.textContent=`✅ ${allItems.length} artículos, ${workers.length} trabajadores${nEntregas?', '+nEntregas+' criterios de entrega':''} importados.`;
+    showToast(`Stock importado: ${allItems.length} artículos, ${workers.length} trabajadores.`,'ok');
+  } catch(e){
+    msg.textContent='Error: '+e.message;
+    status.textContent='❌ '+e.message;
+    showToast('Error al importar: '+e.message,'error',6000);
+  }
+}
+
+function parseStockSheet(wb, bodega){
+  const ws=wb.Sheets[bodega]; if(!ws) return [];
+  const range=XLSX.utils.decode_range(ws['!ref']||'A1:J200');
+  const g=(r,c)=>{const a=ws[XLSX.utils.encode_cell({r,c})];return a?a.v:null;};
+  let hRow=2;
+  for(let r=0;r<=Math.min(range.e.r,8);r++){
+    const v=g(r,0);
+    if(v&&norm(String(v)).replace(/[^a-z]/g,'')==='item'){hRow=r;break;}
+  }
+  const items=[];
+  for(let r=hRow+1;r<=range.e.r;r++){
+    const item=g(r,0); if(!item||norm(String(item)).startsWith('total')) continue;
+    items.push({
+      item:String(item).trim(),
+      talla:g(r,1)!=null?String(g(r,1)).trim():'-',
+      formato:g(r,2)?String(g(r,2)).trim():'UNIDAD',
+      cargos:g(r,3)?String(g(r,3)).trim():'',
+      demanda:Number(g(r,4))||0,
+      stockActual:Number(g(r,5))||0,
+      stockCritico:Number(g(r,6))||0,
+      orden:items.length,
+      bodega
+    });
+  }
+  return items;
+}
+
+function parseMatriz(wb){
+  const ws=wb.Sheets['Matriz EPP']; if(!ws) return [];
+  const range=XLSX.utils.decode_range(ws['!ref']||'A1:AG100');
+  const g=(r,c)=>{const a=ws[XLSX.utils.encode_cell({r,c})];return a&&a.v!=null?a.v:null;};
+  let hRow=1;
+  for(let r=0;r<=Math.min(range.e.r,5);r++){
+    const v=g(r,0); if(v&&norm(String(v))==='nombre'){hRow=r;break;}
+  }
+  const headers=[];
+  for(let c=0;c<=range.e.c;c++){const v=g(hRow,c);headers.push(v?String(v).trim():'');}
+  const workers=[];
+  for(let r=hRow+1;r<=range.e.r;r++){
+    const nombre=g(r,0),apellido=g(r,1);
+    if(!nombre&&!apellido) continue;
+    const fullName=[nombre,apellido].filter(Boolean).map(x=>String(x).trim()).join(' ');
+    const tallas={};
+    for(let c=4;c<headers.length;c++){
+      const h=headers[c],v=g(r,c);
+      if(h&&v!=null) tallas[h]=String(v).trim();
+    }
+    workers.push({nombre:fullName,sede:g(r,2)?String(g(r,2)).trim():'',cargo:g(r,3)?String(g(r,3)).trim():'',tallas});
+  }
+  return workers;
+}
+
+function parseEntregas(wb){
+  // Estructura esperada: col B=Cargo, col C=Ítem, col E=Entregas/año
+  // Retorna: { cargo: { item: numero } }
+  // Buscar la hoja independiente de mayúsculas/minúsculas
+  const sheetName=Object.keys(wb.Sheets).find(n=>norm(n)==='entregas')||null;
+  const ws=sheetName?wb.Sheets[sheetName]:null; if(!ws) return {};
+  const range=XLSX.utils.decode_range(ws['!ref']||'A1:F200');
+  const g=(r,c)=>{const a=ws[XLSX.utils.encode_cell({r,c})];return a&&a.v!=null?a.v:null;};
+  const gs=(r,c)=>{const v=g(r,c);return v!=null?String(v).trim():null;};
+  // Detectar fila de encabezado buscando "cargo" en col B
+  let hRow=2;
+  for(let r=0;r<=Math.min(range.e.r,5);r++){
+    const v=gs(r,1);
+    if(v&&norm(v).includes('cargo')){hRow=r;break;}
+  }
+  // Detectar columna de entregas/año
+  let entCol=4;
+  for(let c=0;c<=range.e.c;c++){
+    const v=gs(hRow,c);
+    if(v&&(norm(v).includes('entrega')||norm(v).includes('ao'))){entCol=c;break;}
+  }
+  const map={}; // { cargo: { item: count } }
+  for(let r=hRow+1;r<=range.e.r;r++){
+    const cargo=gs(r,1), item=gs(r,2), count=g(r,entCol);
+    if(!cargo||!item) continue;
+    if(!map[cargo]) map[cargo]={};
+    map[cargo][item]=count!=null?Number(count):null;
+  }
+  return map;
+}
+
+// ══════════════════════════════════════════════════════
+// GESTIÓN DE USUARIOS (Admin)
+// ══════════════════════════════════════════════════════
+async function loadUsers(){
+  const snap=await db.collection('users').get();
+  S.allUsers=[];
+  snap.forEach(d=>{ const u=d.data(); u._id=d.id; S.allUsers.push(u); });
+  renderUsers();
+}
+
+function renderUsers(){
+  const el=document.getElementById('usersList');
+  if(!S.allUsers.length){ el.innerHTML='<p class="text-xs text-gray-500">Sin usuarios registrados.</p>'; return; }
+  el.innerHTML=S.allUsers.map(u=>`
+    <div class="bg-gray-700 rounded-lg px-3 py-2.5 flex items-center gap-3">
+      <div class="w-8 h-8 bg-vc-800 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+        ${(u.nombre||u.email||'?').charAt(0).toUpperCase()}
+      </div>
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-semibold text-white truncate">${u.nombre||u.email}</p>
+        <p class="text-xs text-gray-400 truncate">${u.email||'—'}</p>
+      </div>
+      <select onchange="changeUserRol('${u._id}',this.value)"
+        class="text-xs bg-gray-600 text-white border border-gray-500 rounded-lg px-2 py-1 outline-none
+        ${u._id===S.user.uid?'opacity-50 cursor-not-allowed':''}"
+        ${u._id===S.user.uid?'disabled':''}>
+        <option value="pendiente" ${u.rol==='pendiente'?'selected':''}>⏳ Pendiente</option>
+        <option value="operativo" ${u.rol==='operativo'?'selected':''}>👷 Operativo</option>
+        <option value="admin"     ${u.rol==='admin'?'selected':''}>🔐 Administrador</option>
+      </select>
+    </div>`).join('');
+}
+
+async function changeUserRol(uid, rol){
+  try {
+    await db.collection('users').doc(uid).update({rol});
+    showToast('Rol actualizado correctamente.','ok');
+    await loadUsers();
+  } catch(e){ showToast('Error: '+e.message,'error',5000); }
+}
+
+// ══════════════════════════════════════════════════════
+// FORMULARIO: REGISTRO DE ENTREGA
+// ══════════════════════════════════════════════════════
+function onEntBodega(){
+  const b=document.getElementById('entBodega').value;
+  document.getElementById('entTrabajador').value='';
+  document.getElementById('entArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
+  document.getElementById('entStockInfo').textContent='—';
+  document.getElementById('entTalla').value='';
+  document.getElementById('entCantidad').value='';
+  document.getElementById('workerProfile').classList.add('hidden');
+  fillWorkerSel(b);
+  if(b) refreshEntArticulo(b);
+}
+
+function onEntTrabajador(){
+  const idx=document.getElementById('entTrabajador').value;
+  const otroWrap=document.getElementById('entOtroWrap');
+  const otroInp=document.getElementById('entOtroNombre');
+  if(idx==='__otro__'){
+    otroWrap.classList.remove('hidden');
+    otroInp.focus();
+  } else {
+    otroWrap.classList.add('hidden');
+    otroInp.value='';
+  }
+  const w=getWorker();
+  updateWorkerProfile(w);
+  const b=document.getElementById('entBodega').value;
+  if(b) refreshEntArticulo(b);
+  refreshEntStock();
+  onEntArticuloChange(w);
+}
+
+function onEntOtroNombreInput(){
+  // Refresca contador si ya hay artículo seleccionado
+  const w=getWorker();
+  const nombre=document.getElementById('entArticulo').value;
+  if(nombre) actualizarContadorEntregas(w, nombre);
+}
+
+function onEntArticulo(){
+  const w=getWorker();
+  onEntArticuloChange(w);
+}
+
+function onEntArticuloChange(w){
+  const nombre=document.getElementById('entArticulo').value;
+  const b=document.getElementById('entBodega').value;
+  if(!nombre){ document.getElementById('entStockInfo').textContent='—'; actualizarContadorEntregas(null,''); return; }
+  // Talla autodetectada
+  const tDetectada = w ? workerTalla(w, nombre) : null;
+  const tFinal = (tDetectada && tDetectada!=='-') ? tDetectada : '';
+  const tallaInp=document.getElementById('entTalla');
+  if(!tallaInp.dataset.editMode){ tallaInp.value=tFinal; tallaInp.readOnly=true; }
+  refreshEntStock();
+  // Perfil
+  if(w) updateWorkerProfile(w, nombre);
+  // Contador de entregas
+  actualizarContadorEntregas(w, nombre);
+}
+
+function actualizarContadorEntregas(w, nombre){
+  const el=document.getElementById('entregasInfo');
+  if(!el) return;
+  if(!w || !nombre){ el.classList.add('hidden'); return; }
+  const count=S.hist.filter(h=>
+    h.tipo==='ENTREGA' &&
+    norm(h.trabajador)===norm(w.nombre) &&
+    norm(h.item)===norm(nombre)
+  ).length;
+  // Buscar criterio de entregas permitidas
+  // 1° por cargo exacto del trabajador, 2° normalizado, 3° cualquier cargo (fallback)
+  let allowed=null;
+  const cargo=w.cargo||'';
+  const nc=norm(cargo);
+  const ni=norm(nombre);
+  // Buscar byCargo con normalización
+  let byCargo=S.entregas[cargo]||null;
+  if(!byCargo){
+    for(const[k,v] of Object.entries(S.entregas)){
+      if(norm(k)===nc){ byCargo=v; break; }
+    }
+  }
+  if(byCargo){
+    if(byCargo[nombre]!=null){ allowed=byCargo[nombre]; }
+    else {
+      for(const[k,v] of Object.entries(byCargo)){
+        if(norm(k)===ni){ allowed=v; break; }
+      }
+    }
+  }
+  // Fallback: si el cargo no está en ENTREGAS, buscar el ítem en todos los cargos
+  if(allowed==null){
+    for(const cargoData of Object.values(S.entregas)){
+      if(cargoData[nombre]!=null){ allowed=cargoData[nombre]; break; }
+      for(const[k,v] of Object.entries(cargoData)){
+        if(norm(k)===ni){ allowed=v; break; }
+      }
+      if(allowed!=null) break;
+    }
+  }
+  let txt=`📊 Lleva <strong>${count}</strong> entrega${count!==1?'s':''} de este artículo`;
+  if(allowed!=null) txt+=` &nbsp;·&nbsp; Permitidas al año: <strong>${allowed}</strong>`;
+  el.innerHTML=txt;
+  el.classList.remove('hidden');
+}
+
+function onEntTallaEdit(){ refreshEntStock(); }
+
+function refreshEntStock(){
+  const b=document.getElementById('entBodega').value;
+  const nombre=document.getElementById('entArticulo').value;
+  const talla=document.getElementById('entTalla').value;
+  if(!b||!nombre){ document.getElementById('entStockInfo').textContent='—'; return; }
+  const row=findStockRow(b,nombre,talla);
+  const el=document.getElementById('entStockInfo');
+  if(!row){ el.textContent='No encontrado en stock'; el.className='input-base bg-red-50 text-red-600 cursor-not-allowed'; return; }
+  const st=row.stockActual;
+  el.textContent=`${fmt(st)} unidades`;
+  el.className='input-base cursor-not-allowed '+
+    (st===0?'bg-red-50 text-red-700 font-bold':st<=5?'bg-orange-50 text-orange-700 font-semibold':'bg-vc-50 text-vc-700 font-semibold');
+}
+
+function onEntCantidad(){ /* validation is done on submit */ }
+
+function refreshEntArticulo(bodega){
+  const sel=document.getElementById('entArticulo');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">Seleccionar artículo...</option>';
+  const w=getWorker();
+  const seen=new Set();
+  (S.stock[bodega]||[]).forEach(it=>{
+    // Si hay trabajador seleccionado (y no es Otro/Visita), solo mostrar EPP que le corresponden
+    if(w && !w._esOtro && workerTalla(w, it.item)==null) return;
+    if(!seen.has(norm(it.item))){ seen.add(norm(it.item));
+      const o=document.createElement('option');
+      o.value=it.item; o.textContent=it.item;
+      sel.appendChild(o);
+    }
+  });
+  if(prev) sel.value=prev;
+}
+
+function getWorker(){
+  const idx=document.getElementById('entTrabajador').value;
+  if(idx==='') return null;
+  if(idx==='__otro__'){
+    const nombre=document.getElementById('entOtroNombre').value.trim();
+    return nombre ? {nombre, cargo:'Visita/Cliente', tallas:{}, _esOtro:true} : null;
+  }
+  return S.workers[parseInt(idx)]||null;
+}
+
+function workerTalla(w, itemName){
+  if(!w||!w.tallas) return null;
+  let t=w.tallas[itemName];
+  if(t!=null) return String(t).trim();
+  const ni=norm(itemName);
+  for(const[k,v] of Object.entries(w.tallas)){
+    if(norm(k)===ni) return String(v).trim();
+  }
+  return null;
+}
+
+function findStockRow(bodega, itemName, talla){
+  const items=S.stock[bodega]||[];
+  const ni=norm(itemName), nt=norm(talla||'');
+  let found=items.find(it=>norm(it.item)===ni&&norm(it.talla)===nt);
+  if(!found) found=items.find(it=>norm(it.item)===ni&&(it.talla==='-'||!it.talla));
+  if(!found) found=items.find(it=>norm(it.item)===ni);
+  return found||null;
+}
+
+function updateWorkerProfile(w, activeItem=''){
+  const panel=document.getElementById('workerProfile');
+  if(!w){ panel.classList.add('hidden'); return; }
+  const tallas=Object.entries(w.tallas||{}).filter(([,v])=>v!=null&&v!=='');
+  if(!tallas.length){ panel.classList.add('hidden'); return; }
+  document.getElementById('profileName').textContent=w.nombre+' · '+w.cargo;
+  document.getElementById('profileTallas').innerHTML=tallas.map(([k,v])=>`
+    <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border
+      ${norm(k)===norm(activeItem)?'bg-vc-700 text-white border-vc-700':'bg-white border-gray-200 text-gray-600'}">
+      <span>${k}</span>
+      <span class="font-bold ${norm(k)===norm(activeItem)?'text-vc-200':'text-vc-700'}">${v==='-'?'Estándar':v}</span>
+    </div>`).join('');
+  panel.classList.remove('hidden');
+}
+
+function toggleTallaEdit(){
+  if(S.rol!=='admin'){ showToast('Solo el administrador puede editar la talla.','warn'); return; }
+  const inp=document.getElementById('entTalla');
+  const wrap=document.getElementById('guardarTallaWrap');
+  const chk=document.getElementById('guardarTallaCheck');
+  if(inp.dataset.editMode){
+    delete inp.dataset.editMode; inp.readOnly=true;
+    inp.classList.remove('border-orange-400');
+    wrap.classList.add('hidden'); chk.checked=false;
+  } else {
+    inp.dataset.editMode='1'; inp.readOnly=false;
+    inp.classList.add('border-orange-400'); inp.focus();
+    // Mostrar checkbox solo si hay trabajador seleccionado
+    const w=getWorker();
+    if(w){
+      document.getElementById('guardarTallaLabel').textContent=
+        `💾 Guardar esta talla en el perfil de ${w.nombre.split(' ')[0]}`;
+      wrap.classList.remove('hidden');
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// FIRMA DIGITAL
+// ══════════════════════════════════════════════════════
+let _entregaPendiente=null, _firmaCtx=null, _firmaCanvas=null;
+let _firmaDibujando=false, _firmaVacia=true, _firmaMode='nueva', _firmaRegistroId=null;
+
+function _firmaPos(canvas, e){
+  const r=canvas.getBoundingClientRect();
+  const scaleX=canvas.width/r.width, scaleY=canvas.height/r.height;
+  return { x:(e.clientX-r.left)*scaleX, y:(e.clientY-r.top)*scaleY };
+}
+function _firmaIniciar(pos){
+  _firmaDibujando=true; _firmaVacia=false;
+  document.getElementById('firmaPlaceholder').style.display='none';
+  _firmaCtx.beginPath(); _firmaCtx.moveTo(pos.x,pos.y);
+}
+function _firmaDibujar(pos){
+  if(!_firmaDibujando) return;
+  _firmaCtx.lineTo(pos.x,pos.y); _firmaCtx.stroke();
+  _firmaCtx.beginPath(); _firmaCtx.moveTo(pos.x,pos.y);
+}
+function limpiarCanvas(){
+  if(!_firmaCtx||!_firmaCanvas) return;
+  _firmaCtx.clearRect(0,0,_firmaCanvas.width,_firmaCanvas.height);
+  _firmaVacia=true; document.getElementById('firmaPlaceholder').style.display='';
+}
+
+function abrirModalFirmaExistente(id, descripcion){
+  _firmaMode='existente'; _firmaRegistroId=id; _firmaVacia=true;
+  document.getElementById('firmaSubtitulo').textContent=descripcion;
+  document.getElementById('firmaPlaceholder').style.display='';
+  const canvas=document.getElementById('firmaCanvas');
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=Math.round((canvas.offsetWidth||400)*dpr);
+  canvas.height=180*dpr;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr); ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='#111'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.lineJoin='round';
+  _firmaCanvas=canvas; _firmaCtx=ctx; _firmaDibujando=false;
+  canvas.onmousedown =e=>{ e.preventDefault(); _firmaIniciar(_firmaPos(canvas,e)); };
+  canvas.onmousemove =e=>{ e.preventDefault(); _firmaDibujar(_firmaPos(canvas,e)); };
+  canvas.onmouseup   =()=>{ _firmaDibujando=false; };
+  canvas.onmouseleave=()=>{ _firmaDibujando=false; };
+  canvas.ontouchstart=e=>{ e.preventDefault(); const t=e.touches[0]; _firmaIniciar(_firmaPos(canvas,t)); };
+  canvas.ontouchmove =e=>{ e.preventDefault(); const t=e.touches[0]; _firmaDibujar(_firmaPos(canvas,t)); };
+  canvas.ontouchend  =()=>{ _firmaDibujando=false; };
+  document.getElementById('modalFirma').classList.remove('hidden');
+}
+
+function abrirModalFirma(datos){
+  _firmaMode='nueva'; _entregaPendiente=datos; _firmaVacia=true;
+  document.getElementById('firmaSubtitulo').innerHTML=
+    `<span class="font-semibold text-gray-700">${datos.w?datos.w.nombre:'Sin trabajador asignado'}</span>`+
+    ` está recibiendo <span class="font-semibold text-vc-700">${datos.cantidad} × ${datos.nombre}</span>`+
+    (datos.talla?` talla <span class="font-semibold">${datos.talla}</span>`:'');
+  document.getElementById('firmaPlaceholder').style.display='';
+
+  const canvas=document.getElementById('firmaCanvas');
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=Math.round((canvas.offsetWidth||400)*dpr);
+  canvas.height=180*dpr;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr); ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='#111'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.lineJoin='round';
+  _firmaCanvas=canvas; _firmaCtx=ctx; _firmaDibujando=false;
+
+  canvas.onmousedown =e=>{ e.preventDefault(); _firmaIniciar(_firmaPos(canvas,e)); };
+  canvas.onmousemove =e=>{ e.preventDefault(); _firmaDibujar(_firmaPos(canvas,e)); };
+  canvas.onmouseup   =()=>{ _firmaDibujando=false; };
+  canvas.onmouseleave=()=>{ _firmaDibujando=false; };
+  canvas.ontouchstart=e=>{ e.preventDefault(); const t=e.touches[0]; _firmaIniciar(_firmaPos(canvas,t)); };
+  canvas.ontouchmove =e=>{ e.preventDefault(); const t=e.touches[0]; _firmaDibujar(_firmaPos(canvas,t)); };
+  canvas.ontouchend  =()=>{ _firmaDibujando=false; };
+
+  document.getElementById('modalFirma').classList.remove('hidden');
+}
+async function confirmarFirma(){
+  if(!confirm('¿Confirmar la entrega con esta firma? Esta acción no se puede deshacer.')) return;
+  const firma=_firmaVacia?null:_firmaCanvas.toDataURL('image/png');
+  document.getElementById('modalFirma').classList.add('hidden');
+  if(_firmaMode==='existente'){
+    await _guardarFirmaEnRegistro(_firmaRegistroId, firma);
+  } else {
+    await _guardarEntrega(_entregaPendiente, firma);
+  }
+}
+
+async function _guardarFirmaEnRegistro(id, firma){
+  if(!firma){ showToast('Dibuja la firma antes de confirmar.','warn'); return; }
+  try {
+    await db.collection('historial').doc(id).update({ firma });
+    showToast('Firma guardada correctamente. ✍️','ok');
+  } catch(e){ showToast('Error al guardar firma: '+e.message,'error',5000); }
+}
+async function cancelarFirma(){
+  document.getElementById('modalFirma').classList.add('hidden');
+  await _guardarEntrega(_entregaPendiente, null);
+}
+
+async function _guardarEntrega(d, firma){
+  const btn=document.getElementById('btnEntrega');
+  btn.disabled=true; btn.innerHTML='<div class="spinner"></div> Registrando...';
+  try {
+    const stockRef=db.collection('stock').doc(d.row._id);
+    await db.runTransaction(async tx=>{
+      const doc=await tx.get(stockRef);
+      if(!doc.exists) throw new Error('Artículo eliminado durante la operación.');
+      const curr=doc.data().stockActual;
+      if(curr<d.cantidad) throw new Error(`Stock insuficiente. Disponible: ${curr}.`);
+      tx.update(stockRef,{stockActual:curr-d.cantidad});
+    });
+    const recambio=document.getElementById('entRecambio')?.value||'Primera entrega';
+    const marca=document.getElementById('entMarca')?.value.trim()||'';
+    const histData={
+      tipo:'ENTREGA', item:d.nombre, talla:d.talla||'-', bodega:d.b,
+      trabajador:d.w?d.w.nombre:'—', talla_trab:d.talla||'-',
+      marca, recambio, cantidad:d.cantidad,
+      fecha:firebase.firestore.FieldValue.serverTimestamp(),
+      uid:S.user.uid, email:S.user.email
+    };
+    if(firma) histData.firma=firma;
+    const histRef=await db.collection('historial').add(histData);
+    const newDocId=histRef.id;
+    const guardarChk=document.getElementById('guardarTallaCheck');
+    if(d.w&&d.w._id&&d.talla&&guardarChk?.checked){
+      await db.collection('workers').doc(d.w._id).update({['tallas.'+d.nombre]:d.talla});
+      showToast(`Talla ${d.talla} guardada en el perfil de ${d.w.nombre.split(' ')[0]}.`,'ok');
+    }
+    showToast(`Entrega registrada: ${d.cantidad} × ${d.nombre}${firma?' ✍️ con firma':''}.`,'ok');
+    const conf=document.getElementById('entConfirm');
+    conf.textContent=`✅ ${d.cantidad} u. de ${d.nombre} entregadas${firma?' ✍️':''}.`;
+    conf.classList.remove('hidden');
+    setTimeout(()=>conf.classList.add('hidden'),4000);
+    limpiarEntrega(false);
+    return newDocId;
+  } catch(e){
+    showToast('Error: '+e.message,'error',6000);
+  } finally {
+    btn.disabled=false; btn.innerHTML='✅ Registrar Entrega';
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// FIRMA REMOTA (QR / LINK)
+// ══════════════════════════════════════════════════════
+async function enviarACelular(){
+  document.getElementById('modalFirma').classList.add('hidden');
+  const docId = await _guardarEntrega(_entregaPendiente, null);
+  if(docId){
+    const desc=`${_entregaPendiente.w?_entregaPendiente.w.nombre:'Sin trabajador'} — ${_entregaPendiente.cantidad} × ${_entregaPendiente.nombre}${_entregaPendiente.talla?' talla '+_entregaPendiente.talla:''}`;
+    mostrarLinkFirma(docId, desc);
+  }
+}
+
+function mostrarLinkFirma(docId, descripcion){
+  const url=window.location.origin+window.location.pathname+'#firma/'+docId;
+  document.getElementById('linkFirmaUrl').value=url;
+  document.getElementById('linkFirmaDesc').textContent=descripcion;
+  const waText=encodeURIComponent('Por favor firma tu recepción de EPP aquí: '+url);
+  document.getElementById('linkFirmaWA').href='https://wa.me/?text='+waText;
+  const qrDiv=document.getElementById('linkFirmaQR');
+  qrDiv.innerHTML='';
+  new QRCode(qrDiv,{text:url,width:180,height:180,colorDark:'#166534',colorLight:'#ffffff'});
+  document.getElementById('modalLinkFirma').classList.remove('hidden');
+}
+
+function copiarLinkFirma(){
+  const url=document.getElementById('linkFirmaUrl').value;
+  navigator.clipboard.writeText(url).then(()=>showToast('Link copiado al portapapeles.','ok'));
+}
+
+async function initFirmaPublica(docId){
+  try {
+    const docSnap=await db.collection('historial').doc(docId).get();
+    if(!docSnap.exists){
+      document.getElementById('firmaPublicaInfo').innerHTML=
+        '<p class="text-red-500 text-center font-semibold">❌ Registro no encontrado.</p>'; return;
+    }
+    const d=docSnap.data();
+    if(d.firma){
+      document.getElementById('firmaPublicaInfo').innerHTML=
+        '<p class="text-vc-700 font-semibold text-center">✅ Este EPP ya tiene firma registrada.<br><span class="text-sm text-gray-500 font-normal">No es necesario firmar nuevamente.</span></p>';
+      document.getElementById('firmaPublicaCanvasWrap').classList.add('hidden');
+      document.getElementById('btnConfirmarFirmaPublica').classList.add('hidden');
+      document.getElementById('limpiarFirmaPublica').classList.add('hidden');
+      return;
+    }
+    const fec=d.fecha?.toDate?d.fecha.toDate():new Date(d.fecha||0);
+    document.getElementById('firmaPublicaNombre').textContent=d.trabajador||'—';
+    document.getElementById('firmaPublicaItem').textContent=d.item||'—';
+    document.getElementById('firmaPublicaTalla').textContent=d.talla||'—';
+    document.getElementById('firmaPublicaFecha').textContent=fec.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
+    document.getElementById('firmaPublicaDocId').value=docId;
+    _setupFirmaPublicaCanvas(docId);
+  } catch(e){
+    document.getElementById('firmaPublicaInfo').innerHTML=
+      `<p class="text-red-500 text-center">Error: ${e.message}</p>`;
+  }
+}
+
+function _setupFirmaPublicaCanvas(docId){
+  const canvas=document.getElementById('firmaPublicaCanvas');
+  const dpr=window.devicePixelRatio||1;
+  canvas.width=Math.round((canvas.offsetWidth||340)*dpr);
+  canvas.height=160*dpr;
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr); ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='#111'; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.lineJoin='round';
+  let drawing=false, empty=true;
+  const gp=(e)=>{ const r=canvas.getBoundingClientRect();
+    return{x:(e.clientX-r.left)*(canvas.width/r.width/dpr),y:(e.clientY-r.top)*(canvas.height/r.height/dpr)}; };
+  const ini=(p)=>{ drawing=true; if(empty){empty=false;
+    document.getElementById('firmaPublicaPlaceholder').style.display='none';}
+    ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+  const drw=(p)=>{ if(!drawing)return; ctx.lineTo(p.x,p.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+  canvas.onmousedown=e=>{e.preventDefault();ini(gp(e));};
+  canvas.onmousemove=e=>{e.preventDefault();drw(gp(e));};
+  canvas.onmouseup=()=>drawing=false; canvas.onmouseleave=()=>drawing=false;
+  canvas.ontouchstart=e=>{e.preventDefault();ini(gp(e.touches[0]));};
+  canvas.ontouchmove=e=>{e.preventDefault();drw(gp(e.touches[0]));};
+  canvas.ontouchend=()=>drawing=false;
+  document.getElementById('limpiarFirmaPublica').onclick=()=>{
+    ctx.clearRect(0,0,canvas.width/dpr*dpr,canvas.height/dpr*dpr); empty=true;
+    document.getElementById('firmaPublicaPlaceholder').style.display='';
+  };
+  document.getElementById('btnConfirmarFirmaPublica').onclick=async()=>{
+    if(empty){alert('Por favor dibuja tu firma antes de confirmar.');return;}
+    if(!confirm('¿Confirmar firma? Esta acción no se puede deshacer.'))return;
+    const firma=canvas.toDataURL('image/png');
+    try{
+      await db.collection('historial').doc(docId).update({firma});
+      document.getElementById('scrFirmaPublica').innerHTML=`
+        <div class="flex flex-col items-center justify-center min-h-screen p-8 text-center bg-gray-50">
+          <div class="bg-white rounded-2xl shadow-xl p-8 max-w-xs w-full">
+            <div class="text-5xl mb-4">✅</div>
+            <h2 class="text-xl font-black text-vc-800 mb-2">¡Firma registrada!</h2>
+            <p class="text-gray-500 text-sm">Tu firma ha sido guardada correctamente en el sistema EPP Verdecorp.</p>
+            <p class="text-xs text-gray-400 mt-4">Puedes cerrar esta ventana.</p>
+          </div>
+        </div>`;
+    }catch(e){alert('Error al guardar firma: '+e.message);}
+  };
+}
+
+async function registrarEntrega(){
+  const b         = document.getElementById('entBodega').value;
+  const workerIdx = document.getElementById('entTrabajador').value;
+  const nombre    = document.getElementById('entArticulo').value;
+  const talla     = document.getElementById('entTalla').value;
+  const cantidad  = parseInt(document.getElementById('entCantidad').value)||0;
+  let w;
+  if(workerIdx==='__otro__'){
+    const otroNombre=document.getElementById('entOtroNombre').value.trim();
+    if(!otroNombre){ showToast('Ingresa el nombre de la visita o cliente.','warn'); return; }
+    w={nombre:otroNombre, cargo:'Visita/Cliente', tallas:{}, _esOtro:true};
+  } else {
+    w = workerIdx!==''?S.workers[parseInt(workerIdx)]:null;
+  }
+
+  if(!b||!nombre||!cantidad||cantidad<1){ showToast('Completa bodega, artículo y cantidad.','warn'); return; }
+  const row=findStockRow(b,nombre,talla);
+  if(!row){ showToast('Artículo no encontrado en stock.','error',5000); return; }
+  if(row.stockActual<cantidad){ showToast(`Stock insuficiente. Disponible: ${row.stockActual}.`,'error',5000); return; }
+
+  // Abrir modal de firma antes de guardar
+  abrirModalFirma({b, nombre, talla, cantidad, w, row, workerIdx});
+}
+
+// ══════════════════════════════════════════════════════
+// ACTA DE ENTREGA
+// ══════════════════════════════════════════════════════
+function abrirModalActa(){
+  const trabs=[...new Set(
+    S.hist.filter(h=>h.tipo==='ENTREGA'&&h.trabajador&&h.trabajador!=='—').map(h=>h.trabajador)
+  )].sort();
+  const sel=document.getElementById('actaTrabajador');
+  sel.innerHTML='<option value="">Seleccionar trabajador...</option>'+
+    trabs.map(t=>`<option value="${t}">${t}</option>`).join('');
+  const filtroTrab=document.getElementById('histTrabajador')?.value;
+  if(filtroTrab) sel.value=filtroTrab;
+  document.getElementById('modalActa').classList.remove('hidden');
+}
+
+function generarActa(){
+  const nombre=document.getElementById('actaTrabajador').value;
+  if(!nombre){ showToast('Selecciona un trabajador.','warn'); return; }
+
+  const w=S.workers.find(x=>norm(x.nombre)===norm(nombre));
+  const entregas=S.hist
+    .filter(h=>h.tipo==='ENTREGA'&&norm(h.trabajador)===norm(nombre))
+    .slice().sort((a,b)=>{
+      const fa=a.fecha?.toDate?a.fecha.toDate():new Date(a.fecha||0);
+      const fb=b.fecha?.toDate?b.fecha.toDate():new Date(b.fecha||0);
+      return fa-fb;
+    });
+
+  if(!entregas.length){ showToast('Sin entregas registradas para este trabajador.','warn'); return; }
+
+  const hoy=new Date().toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+  const filas=entregas.map(h=>{
+    const fec=h.fecha?.toDate?h.fecha.toDate():new Date(h.fecha||0);
+    const ds=fec.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const firmaHtml=h.firma
+      ?`<img src="${h.firma}" style="max-height:52px;max-width:130px;display:block;margin:auto;">`
+      :`<span style="color:#bbb;font-size:10px;font-style:italic;">Sin firma</span>`;
+    return `<tr style="border-bottom:1px solid #e5e7eb;">
+      <td style="padding:7px 8px;font-size:12px;">${h.item||'—'}</td>
+      <td style="padding:7px 8px;font-size:11px;color:#555;text-align:center;">${h.marca||'—'}</td>
+      <td style="padding:7px 8px;font-size:12px;text-align:center;font-weight:600;">${h.talla||'—'}</td>
+      <td style="padding:7px 8px;font-size:11px;color:#555;text-align:center;">${h.recambio||'Primera entrega'}</td>
+      <td style="padding:7px 8px;font-size:12px;text-align:center;font-weight:700;">${h.cantidad||0}</td>
+      <td style="padding:7px 8px;font-size:11px;text-align:center;white-space:nowrap;">${ds}</td>
+      <td style="padding:4px 8px;text-align:center;min-width:130px;height:58px;">${firmaHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html lang="es"><head>
+<meta charset="UTF-8">
+<title>Acta EPP — ${nombre}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;padding:22px;color:#111;font-size:13px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #166534;padding-bottom:12px;margin-bottom:14px}
+.logo{font-size:22px;font-weight:900;letter-spacing:-0.5px}
+.logo span{color:#166534}
+.docref{text-align:right;font-size:10px;color:#666;line-height:1.5}
+.docref b{font-size:12px;color:#111;display:block}
+h2{text-align:center;font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1.5px;margin:12px 0 14px}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:5px 28px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 14px;margin-bottom:16px}
+.info p{font-size:11.5px;color:#374151}
+.info b{color:#166534}
+table{width:100%;border-collapse:collapse;border:1px solid #d1d5db;font-size:12px}
+thead tr{background:#166534;color:#fff}
+th{padding:8px 7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;text-align:center;font-weight:700}
+th:first-child{text-align:left}
+tr:nth-child(even){background:#f9faf9}
+.pie{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.pie-box{border:1px solid #d1d5db;border-radius:8px;padding:12px 14px;text-align:center}
+.pie-box p{font-size:10px;color:#6b7280;margin-bottom:4px}
+.linea{border-bottom:1px solid #374151;margin:26px 0 6px}
+.pie-nombre{font-size:11px;font-weight:bold}
+.nota{margin-top:20px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:9.5px;color:#6b7280;line-height:1.5}
+.btn-print{display:block;margin:18px auto 0;padding:8px 28px;background:#166534;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:bold}
+@media print{@page{size:letter;margin:1.3cm}body{padding:0}.btn-print{display:none}}
+</style></head><body>
+<div class="top">
+  <div class="logo">VERDE<span>CORP</span></div>
+  <div class="docref"><b>REG-PSIGRES-01.1</b>Registro de Entrega de EPP<br>Emisión: ${hoy}</div>
+</div>
+<h2>Acta de Entrega — Equipos de Protección Personal</h2>
+<div class="info">
+  <p><b>Trabajador:</b> ${nombre}</p>
+  <p><b>Cargo:</b> ${w?.cargo||'—'}</p>
+  <p><b>Centro de Trabajo:</b> ${w?.sede||'—'}</p>
+  <p><b>Total ítems registrados:</b> ${entregas.length}</p>
+</div>
+<table>
+  <thead><tr>
+    <th style="text-align:left;min-width:160px">Tipo de EPP</th>
+    <th>Marca / Modelo</th>
+    <th>Talla / Característica</th>
+    <th>Recambio</th>
+    <th>Cantidad</th>
+    <th>Fecha</th>
+    <th style="min-width:130px">Firma del Trabajador</th>
+  </tr></thead>
+  <tbody>${filas}</tbody>
+</table>
+<div class="pie">
+  <div class="pie-box">
+    <p>Nombre y firma de quien entrega EPP</p>
+    <div class="linea"></div>
+    <div class="pie-nombre">Encargado de Bodega / Prevencionista</div>
+  </div>
+  <div class="pie-box">
+    <p>Declaro haber recibido los artículos indicados</p>
+    <div class="linea"></div>
+    <div class="pie-nombre">${nombre}</div>
+  </div>
+</div>
+<div class="nota">
+  <b>Recambio:</b> EPP roto, gastado, extraviado, perdió forma, perdida de pieza, incompatibilidad, etc. No aplica para EPP desechables.&nbsp;&nbsp;
+  <b>Cantidad:</b> Número de EPP entregados.&nbsp;&nbsp;
+  Documento generado el ${hoy} — Sistema EPP Online Verdecorp.
+</div>
+<button class="btn-print" onclick="window.print()">🖨 Imprimir / Guardar como PDF</button>
+</body></html>`;
+
+  document.getElementById('modalActa').classList.add('hidden');
+  const win=window.open('','_blank');
+  if(win){ win.document.write(html); win.document.close(); }
+  else showToast('Activa las ventanas emergentes para generar el acta.','warn',5000);
+}
+
+function limpiarEntrega(clearBodega=true){
+  if(clearBodega) document.getElementById('entBodega').value='';
+  document.getElementById('entTrabajador').value='';
+  document.getElementById('entOtroWrap').classList.add('hidden');
+  document.getElementById('entOtroNombre').value='';
+  document.getElementById('entArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
+  document.getElementById('entTalla').value='';
+  document.getElementById('entTalla').readOnly=true;
+  document.getElementById('entTalla').classList.remove('border-orange-400');
+  delete document.getElementById('entTalla').dataset.editMode;
+  document.getElementById('guardarTallaWrap').classList.add('hidden');
+  document.getElementById('guardarTallaCheck').checked=false;
+  document.getElementById('entCantidad').value='';
+  document.getElementById('entMarca').value='';
+  document.getElementById('entRecambio').value='Primera entrega';
+  document.getElementById('entStockInfo').textContent='—';
+  document.getElementById('entStockInfo').className='input-base bg-gray-50 text-gray-500 cursor-not-allowed flex items-center';
+  document.getElementById('workerProfile').classList.add('hidden');
+  document.getElementById('entregasInfo').classList.add('hidden');
+  if(!clearBodega&&document.getElementById('entBodega').value)
+    refreshEntArticulo(document.getElementById('entBodega').value);
+}
+
+// ══════════════════════════════════════════════════════
+// FORMULARIO: ENTRADA DE CAMIÓN
+// ══════════════════════════════════════════════════════
+function onCamBodega(){
+  const b=document.getElementById('camBodega').value;
+  document.getElementById('camArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
+  document.getElementById('camStockInfo').textContent='—';
+  if(b) refreshCamArticulo(b);
+}
+
+function onCamArticulo(){ refreshCamStock(); }
+
+function refreshCamArticulo(bodega){
+  const q = norm((document.getElementById('camBuscarArt')||{}).value||'');
+  const sel=document.getElementById('camArticulo');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">Seleccionar artículo...</option>';
+  (S.stock[bodega]||[]).filter(it=> !q || norm(it.item).includes(q)).forEach(it=>{
+    const o=document.createElement('option');
+    o.value=it.item+'|'+it.talla; o.textContent=it.item+(it.talla&&it.talla!=='-'?' — '+it.talla:'')+(` (Stock: ${it.stockActual})`);
+    sel.appendChild(o);
+  });
+  if(prev) sel.value=prev;
+}
+
+function filtrarCamArticulo(){
+  const b=document.getElementById('camBodega').value;
+  if(b) refreshCamArticulo(b);
+}
+
+function refreshCamStock(){
+  const val=document.getElementById('camArticulo').value;
+  const b=document.getElementById('camBodega').value;
+  if(!val||!b){ document.getElementById('camStockInfo').textContent='—'; return; }
+  const[itemName,talla]=val.split('|');
+  const row=findStockRow(b,itemName,talla);
+  document.getElementById('camStockInfo').textContent=row?`${fmt(row.stockActual)} unidades`:'—';
+}
+
+async function registrarEntrada(){
+  const b        = document.getElementById('camBodega').value;
+  const val      = document.getElementById('camArticulo').value;
+  const cantidad = parseInt(document.getElementById('camCantidad').value)||0;
+  const prov     = document.getElementById('camProveedor').value.trim();
+
+  if(!b||!val||!cantidad||cantidad<1){ showToast('Completa bodega, artículo y cantidad.','warn'); return; }
+
+  const[itemName,talla]=val.split('|');
+  const row=findStockRow(b,itemName,talla);
+  if(!row){ showToast('Artículo no encontrado en stock.','error',5000); return; }
+
+  const btn=document.getElementById('btnEntrada');
+  btn.disabled=true; btn.innerHTML='<div class="spinner"></div> Registrando...';
+
+  try {
+    const stockRef=db.collection('stock').doc(row._id);
+    await db.runTransaction(async tx=>{
+      const doc=await tx.get(stockRef);
+      if(!doc.exists) throw new Error('Artículo no encontrado.');
+      tx.update(stockRef,{stockActual:doc.data().stockActual+cantidad});
+    });
+    await db.collection('historial').add({
+      tipo:'ENTRADA', item:itemName, talla:talla||'-', bodega:b,
+      trabajador:prov||'—', cantidad,
+      fecha:firebase.firestore.FieldValue.serverTimestamp(),
+      uid:S.user.uid, email:S.user.email
+    });
+    showToast(`Entrada registrada: ${cantidad} × ${itemName}.`,'ok');
+    const conf=document.getElementById('camConfirm');
+    conf.textContent=`✅ +${cantidad} u. de ${itemName} ingresadas.`;
+    conf.classList.remove('hidden');
+    setTimeout(()=>conf.classList.add('hidden'),4000);
+    limpiarEntrada(false);
+  } catch(e){
+    showToast('Error: '+e.message,'error',6000);
+  } finally {
+    btn.disabled=false; btn.innerHTML='✅ Registrar Entrada';
+  }
+}
+
+function limpiarEntrada(clearBodega=true){
+  if(clearBodega) document.getElementById('camBodega').value='';
+  document.getElementById('camArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
+  document.getElementById('camCantidad').value='';
+  document.getElementById('camProveedor').value='';
+  document.getElementById('camStockInfo').textContent='—';
+  const buscar=document.getElementById('camBuscarArt'); if(buscar) buscar.value='';
+  if(!clearBodega&&document.getElementById('camBodega').value)
+    refreshCamArticulo(document.getElementById('camBodega').value);
+}
+
+// ══════════════════════════════════════════════════════
+// HISTORIAL
+// ══════════════════════════════════════════════════════
+function updateHistFiltros(){
+  const artSel=document.getElementById('histArticulo');
+  const trabSel=document.getElementById('histTrabajador');
+  const prevArt=artSel.value, prevTrab=trabSel.value;
+  const arts=[...new Set(S.hist.map(h=>h.item).filter(Boolean))].sort();
+  const trabs=[...new Set(S.hist.map(h=>h.trabajador).filter(Boolean))].sort();
+  artSel.innerHTML='<option value="">Todos los EPP</option>'+arts.map(a=>`<option value="${a}">${a}</option>`).join('');
+  trabSel.innerHTML='<option value="">Todos los trabajadores</option>'+trabs.map(t=>`<option value="${t}">${t}</option>`).join('');
+  artSel.value=prevArt; trabSel.value=prevTrab;
+}
+
+function clearHistFiltros(){
+  ['histSearch','histArticulo','histTrabajador','histTipo'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  renderHistorial();
+}
+
+function renderHistorial(){
+  const txt=norm(document.getElementById('histSearch')?.value||'');
+  const art=document.getElementById('histArticulo')?.value||'';
+  const trab=document.getElementById('histTrabajador')?.value||'';
+  const tipo=document.getElementById('histTipo')?.value||'';
+
+  let items=[...S.hist];
+  if(txt) items=items.filter(h=>norm(h.item).includes(txt)||norm(h.trabajador).includes(txt)||norm(h.bodega).includes(txt));
+  if(art) items=items.filter(h=>h.item===art);
+  if(trab) items=items.filter(h=>h.trabajador===trab);
+  if(tipo) items=items.filter(h=>h.tipo===tipo);
+
+  const tbody=document.getElementById('histBody');
+  if(!tbody) return;
+  const isAdmin=S.rol==='admin';
+  tbody.innerHTML=items.length?items.map(h=>{
+    const fec=h.fecha?.toDate?h.fecha.toDate():new Date(h.fecha||Date.now());
+    const ds=fec.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const ts=fec.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+    const isEntrega=h.tipo==='ENTREGA';
+    const isAjuste=h.tipo==='AJUSTE INVENTARIO';
+    const tieneFirma=!!h.firma;
+    // Firma column: for entregas show ✍️ (unsigned) or ✅ (signed); for others show —
+    let firmaCell='<td class="px-4 py-2.5 text-center text-gray-300 text-xs">—</td>';
+    if(isEntrega){
+      if(tieneFirma){
+        firmaCell=`<td class="px-4 py-2.5 text-center"><span title="Firmado" class="text-vc-600 text-lg">✅</span></td>`;
+      } else {
+        const desc=`${h.item||''}${h.talla?' talla '+h.talla:''} → ${h.trabajador||''}`;
+        firmaCell=`<td class="px-4 py-2.5 text-center">
+          <button onclick="abrirModalFirmaExistente('${h._id}','${desc.replace(/'/g,"\\'")}')"
+            class="text-amber-500 hover:text-amber-700 text-lg" title="Agregar firma">✍️</button>
+          <button onclick="mostrarLinkFirma('${h._id}','${desc.replace(/'/g,"\\'")}')"
+            class="text-blue-400 hover:text-blue-600 text-xs ml-1" title="Enviar link al celular">📱</button>
+        </td>`;
+      }
+    }
+    const delBtn=isAdmin?`<td class="px-2 py-2.5 text-center">
+      <button onclick="deleteHistRecord('${h._id}')" class="text-red-300 hover:text-red-500 text-xs" title="Eliminar">🗑</button>
+    </td>`:'<td></td>';
+    return `<tr class="border-t border-gray-100 hover:bg-gray-50 transition-colors">
+      <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${ds}<br><span class="text-gray-400">${ts}</span></td>
+      <td class="px-4 py-2.5">
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold
+          ${isEntrega?'bg-vc-100 text-vc-800':isAjuste?'bg-amber-100 text-amber-800':'bg-blue-100 text-blue-800'}">
+          ${isEntrega?'📦 Entrega':isAjuste?'📋 Inventario':'🚚 Entrada'}
+        </span>
+      </td>
+      <td class="px-4 py-2.5 font-semibold text-sm">${h.item||'—'}</td>
+      <td class="px-4 py-2.5 text-gray-500 text-sm">${h.talla||'—'}</td>
+      <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${h.tipo==='TRASPASO'?(h.bodegaOrigen||'—')+'<br>→ '+(h.bodegaDestino||'—'):(h.bodega||'—')}</td>
+      <td class="px-4 py-2.5 text-sm">${h.tipo==='TRASPASO'?(h.motivo||h.registradoPor||'—'):(h.trabajador||'—')}</td>
+      <td class="px-4 py-2.5 text-center font-bold ${isEntrega?'text-vc-700':isAjuste?(h.cantidad>=0?'text-blue-600':'text-red-600'):'text-blue-700'}">
+        ${isEntrega?'-':(h.cantidad>0?'+':'')}${h.cantidad||0}
+      </td>
+      <td class="px-4 py-2.5 text-xs text-gray-400">${h.email||'—'}</td>
+      ${firmaCell}
+      ${delBtn}
+    </tr>`;
+  }).join(''):`<tr><td colspan="10" class="text-center py-12 text-gray-400 text-sm">Sin registros</td></tr>`;
+  const cnt=document.getElementById('histCount');
+  if(cnt) cnt.textContent=`${items.length} de ${S.hist.length} registros`;
+}
+
+function exportarExcel(){
+  if(S.rol!=='admin'){ showToast('Solo el administrador puede exportar.','warn'); return; }
+  const wb=XLSX.utils.book_new();
+  BODEGAS.forEach(bodega=>{
+    const items=[...(S.stock[bodega]||[])].sort((a,b)=>(a.orden??999)-(b.orden??999));
+    if(!items.length) return;
+    const headers=['Ítem','Talla','Formato','Cargos','Demanda','Stock Actual'];
+    const rows=items.map(i=>[i.item,i.talla||'-',i.formato||'UNIDAD',i.cargos||'',i.demanda||0,i.stockActual||0]);
+    const ws=XLSX.utils.aoa_to_sheet([headers,...rows]);
+    ws['!cols']=[30,10,12,20,10,12].map(w=>({wch:w}));
+    headers.forEach((_,c)=>{ const ref=XLSX.utils.encode_cell({r:0,c}); if(ws[ref]) ws[ref].s={font:{bold:true}}; });
+    XLSX.utils.book_append_sheet(wb,ws,bodega.substring(0,31));
+  });
+  if(S.hist.length){
+    const hHeaders=['Fecha','Tipo','Artículo','Talla','Bodega','Trabajador','Cantidad','Usuario'];
+    const hRows=S.hist.map(h=>{
+      const fec=h.fecha?.toDate?h.fecha.toDate():new Date(h.fecha||Date.now());
+      return [fec.toLocaleDateString('es-CL')+' '+fec.toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}),
+        h.tipo||'',h.item||'',h.talla||'-',h.bodega||'',h.trabajador||'',h.cantidad||0,h.email||''];
+    });
+    const wsH=XLSX.utils.aoa_to_sheet([hHeaders,...hRows]);
+    wsH['!cols']=[18,10,25,8,20,25,8,22].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,wsH,'Historial');
+  }
+  const fecha=new Date().toLocaleDateString('es-CL').replace(/\//g,'-');
+  XLSX.writeFile(wb,`EPP_Verdecorp_Stock_${fecha}.xlsx`);
+  showToast('Excel exportado correctamente.','ok');
+}
+
+function onTrpOrigen(){
+  const b=document.getElementById('trpOrigen').value;
+  document.getElementById('trpArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
+  document.getElementById('trpStockInfo').textContent='—';
+  document.getElementById('trpBuscarArt').value='';
+  if(!b) return;
+  _fillTrpArticulos(b,'');
+}
+function filtrarTrpArticulo(){
+  const b=document.getElementById('trpOrigen').value;
+  if(!b) return;
+  _fillTrpArticulos(b,(document.getElementById('trpBuscarArt').value||'').trim());
+}
+function _fillTrpArticulos(bodega,busqueda){
+  const q=norm(busqueda);
+  const sel=document.getElementById('trpArticulo');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">Seleccionar artículo...</option>';
+  (S.stock[bodega]||[]).filter(it=>!q||norm(it.item).includes(q)).forEach(it=>{
+    const o=document.createElement('option');
+    o.value=it.item+'|'+it.talla;
+    o.textContent=it.item+(it.talla&&it.talla!=='-'?' — '+it.talla:'')+' (Stock: '+it.stockActual+')';
+    sel.appendChild(o);
+  });
+  if(prev) sel.value=prev;
+  onTrpArticulo();
+}
+function onTrpArticulo(){
+  const b=document.getElementById('trpOrigen').value;
+  const v=document.getElementById('trpArticulo').value;
+  const info=document.getElementById('trpStockInfo');
+  if(!b||!v){ info.textContent='—'; return; }
+  const [item,talla]=v.split('|');
+  const found=(S.stock[b]||[]).find(it=>it.item===item&&it.talla===talla);
+  info.textContent=found?found.stockActual+' unidades disponibles':'—';
+}
+async function registrarTraspaso(){
+  if(S.rol!=='admin'&&S.rol!=='prevencionista'){ showToast('Sin permiso.','warn'); return; }
+  const origen =document.getElementById('trpOrigen').value;
+  const destino=document.getElementById('trpDestino').value;
+  const artVal =document.getElementById('trpArticulo').value;
+  const cant   =parseInt(document.getElementById('trpCantidad').value)||0;
+  const motivo =document.getElementById('trpMotivo').value.trim();
+  const conf   =document.getElementById('trpConfirm');
+  if(!origen){  alert('Selecciona la bodega de origen.');  return; }
+  if(!destino){ alert('Selecciona la bodega de destino.'); return; }
+  if(origen===destino){ alert('Origen y destino deben ser distintos.'); return; }
+  if(!artVal){  alert('Selecciona un artículo.'); return; }
+  if(cant<=0){  alert('La cantidad debe ser mayor a 0.'); return; }
+  const [item,talla]=artVal.split('|');
+  const stockOrigen=(S.stock[origen]||[]).find(it=>it.item===item&&it.talla===talla);
+  if(!stockOrigen){ alert('Artículo no encontrado en bodega de origen.'); return; }
+  if(cant>stockOrigen.stockActual){ alert('Cantidad supera el stock disponible ('+stockOrigen.stockActual+' unidades).'); return; }
+  conf.textContent='Registrando...'; conf.classList.remove('hidden');
+  try{
+    await db.collection('stock').doc(stockOrigen.docId).update({stockActual:firebase.firestore.FieldValue.increment(-cant)});
+    const destSnap=await db.collection('stock').where('item','==',item).where('talla','==',talla).where('bodega','==',destino).get();
+    if(!destSnap.empty){
+      await destSnap.docs[0].ref.update({stockActual:firebase.firestore.FieldValue.increment(cant)});
+    } else {
+      await db.collection('stock').add({item,talla,bodega:destino,stockActual:cant,stockMinimo:0});
+    }
+    await db.collection('historial').add({
+      tipo:'TRASPASO',fecha:new Date().toISOString(),item,talla,cantidad:cant,
+      bodegaOrigen:origen,bodegaDestino:destino,motivo:motivo||'',
+      registradoPor:S.userEmail||'',workerNombre:S.userEmail||''
+    });
+    conf.textContent='✅ Traspaso registrado';
+    limpiarTraspaso();
+  } catch(e){
+    console.error(e);
+    conf.textContent='❌ Error: '+e.message;
+  }
+}
+function limpiarTraspaso(){
+  ['trpOrigen','trpDestino','trpArticulo'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('trpBuscarArt').value='';
+  document.getElementById('trpCantidad').value='';
+  document.getElementById('trpMotivo').value='';
+  document.getElementById('trpStockInfo').textContent='—';
+}
+
+async function deleteHistRecord(docId){
+  if(S.rol!=='admin'){ showToast('Solo el administrador puede eliminar registros.','warn'); return; }
+  if(!confirm('¿Eliminar este registro del historial?\n\nEsta acción no puede deshacerse.\nNota: el stock NO se modifica automáticamente.')) return;
+  try{
+    await db.collection('historial').doc(docId).delete();
+    showToast('Registro eliminado');
+  } catch(e){
+    showToast('Error al eliminar: '+e.message,'error');
+  }
+}
+
+async function clearHist(){
+  if(S.rol!=='admin'){ showToast('Solo el administrador puede borrar el historial.','warn'); return; }
+  if(!confirm('¿Borrar el historial completo? Esta acción no se puede deshacer.')) return;
+  try {
+    const snap=await db.collection('historial').get();
+    const batch=db.batch();
+    snap.forEach(d=>batch.delete(d.ref));
+    await batch.commit();
+    showToast('Historial borrado.','ok');
+  } catch(e){ showToast('Error: '+e.message,'error',5000); }
+}
+
+// ══════════════════════════════════════════════════════
+// WORKER DROPDOWN
+// ══════════════════════════════════════════════════════
+function fillWorkerSel(bodega='', search=''){
+  const sel=document.getElementById('entTrabajador'); if(!sel) return;
+  const prev=sel.value;
+  const q=norm(search);
+  sel.innerHTML='<option value="">Seleccionar trabajador...</option>';
+  S.workers.forEach((w,i)=>{
+    if(w.activo===false) return;                          // ocultar inactivos
+    if(bodega && !sedeEnBodega(w.sede, bodega)) return;  // filtrar por bodega
+    if(q && !norm(w.nombre||'').includes(q)) return;     // filtrar por búsqueda
+    const o=document.createElement('option');
+    o.value=i; o.textContent=`${w.nombre} (${w.cargo||'—'})`;
+    sel.appendChild(o);
+  });
+  const oOtro=document.createElement('option');
+  oOtro.value='__otro__'; oOtro.textContent='⚠ Otro / Visita (ingreso manual)';
+  sel.appendChild(oOtro);
+  if(prev) sel.value=prev;
+}
+
+function filtrarTrabajador(){
+  const b=document.getElementById('entBodega').value;
+  const q=document.getElementById('entBuscarTrab').value;
+  fillWorkerSel(b, q);
+}
+
+function sedeEnBodega(sede, bodega){
+  if(!sede||!bodega) return true;
+  if(bodega==='BULNES (1+3)') return sede.startsWith('BULNES');
+  if(bodega.includes('ROMERAL')) return sede.includes('ROMERAL');
+  if(bodega==='ECOCORP') return sede==='ECOCORP' || sede.startsWith('ECOCORP');
+  return sede===bodega;
+}
+
+// ══════════════════════════════════════════════════════
+// DIAGNÓSTICO MATRIZ EPP
+// ══════════════════════════════════════════════════════
+function renderDiag(){
+  const out=document.getElementById('diagOutput'); if(!out) return;
+  if(!S.workers.length){ out.innerHTML='<p class="p-4 text-gray-400">Sin trabajadores cargados.</p>'; return; }
+  const search=norm(document.getElementById('diagSearch')?.value||'');
+  const selItem=document.getElementById('diagItem');
+  const allItems=new Set();
+  S.workers.forEach(w=>{ if(w.tallas) Object.keys(w.tallas).forEach(k=>allItems.add(k)); });
+  
+  const sortedItems=[...allItems].sort();
+  const prevVal=selItem?.value||'';
+  if(selItem){ selItem.innerHTML='<option value="">— Todos los EPP —</option>'+sortedItems.map(k=>`<option value="${k}" ${k===prevVal?'selected':''}>${k}</option>`).join(''); }
+  const filterItem=selItem?.value||'';
+  let workers=S.workers.filter(w=>{
+    if(search&&!norm(w.nombre).includes(search)) return false;
+    if(filterItem&&!(w.tallas&&w.tallas[filterItem])) return false;
+    return true;
+  });
+  const cols=filterItem?[filterItem]:sortedItems;
+  out.innerHTML=`<table class="w-full text-xs"><thead class="bg-gray-700 text-white sticky top-0"><tr>
+    <th class="px-3 py-2 text-left">Trabajador</th>
+    <th class="px-3 py-2 text-left">Sede</th>
+    ${cols.map(c=>`<th class="px-2 py-2 text-center whitespace-nowrap">${c}</th>`).join('')}
+  </tr></thead><tbody>${
+    workers.map(w=>`<tr class="border-t border-gray-700 hover:bg-gray-700">
+      <td class="px-3 py-1.5 font-semibold text-white whitespace-nowrap">${w.nombre}</td>
+      <td class="px-3 py-1.5 text-gray-400 whitespace-nowrap">${w.sede||'—'}</td>
+      ${cols.map(col=>{
+        const v=w.tallas&&w.tallas[col]?w.tallas[col]:'';
+        return `<td class="px-2 py-1.5 text-center ${v&&v!=='-'?'text-vc-400 font-bold':'text-gray-600'}">${v||'—'}</td>`;
+      }).join('')}
+    </tr>`).join('')
+  }</tbody></table>`;
+}
+
+// ══════════════════════════════════════════════════════
+// INVENTARIO MENSUAL
+// ══════════════════════════════════════════════════════
+function toggleInventario(){
+  try{
+    const panel=document.getElementById('inventarioPanel');
+    const btn=document.getElementById('inventarioToggleBtn');
+    if(!panel){ showToast('Error: panel inventario no encontrado','error'); return; }
+    const isHidden=panel.style.display==='none'||panel.classList.contains('hidden');
+    if(isHidden){
+      if(S.adminOpen){
+        document.getElementById('adminPanel').classList.add('hidden');
+        document.getElementById('adminToggleBtn').textContent='🔐 Panel Admin';
+        S.adminOpen=false;
+      }
+      panel.style.display='block';
+      panel.classList.remove('hidden');
+      if(btn) btn.textContent='✖ Cerrar Inventario';
+      renderInventario();
+    } else {
+      panel.style.display='none';
+      panel.classList.add('hidden');
+      if(btn) btn.textContent='📦 Inventario';
+    }
+  } catch(e){ showToast('Error inventario: '+e.message,'error'); }
+}
+
+function renderInventario(){
+  const bodega=document.getElementById('invBodega').value;
+  const tbody=document.getElementById('invBody');
+  const empty=document.getElementById('invEmpty');
+  const wrap=document.getElementById('invTablaWrap');
+  const actions=document.getElementById('invActions');
+  if(!bodega){
+    tbody.innerHTML='';
+    wrap.classList.add('hidden');
+    empty.classList.remove('hidden');
+    actions.classList.add('hidden');
+    return;
+  }
+  const items=S.stock[bodega]||[];
+  empty.classList.add('hidden');
+  wrap.classList.remove('hidden');
+  actions.classList.remove('hidden');
+  tbody.innerHTML=items.map((it,i)=>`
+    ${(()=>{
+      const sc=it.stockCritico||0;
+      const sa=it.stockActual??0;
+      const bajo=sc>0&&sa<sc;
+      const rowCls=bajo?'bg-red-50':'';
+      const badge=bajo?`<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">⚠ Bajo</span>`
+        :`<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-700">OK</span>`;
+      return `<tr class="border-t border-gray-100 hover:bg-gray-50 ${rowCls}">
+      <td class="px-4 py-2 text-gray-800">${it.item||'—'}</td>
+      <td class="px-4 py-2 text-gray-500">${it.talla||'—'}</td>
+      <td class="px-4 py-2 text-center font-bold ${bajo?'text-red-600':'text-vc-700'}">${sa}</td>
+      <td class="px-4 py-2 text-center">
+        <input type="number" min="0" value="${sa}" data-idx="${i}"
+          class="input-base w-20 text-center py-1" oninput="onInvInput(this)">
+      </td>
+      <td class="px-4 py-2 text-center font-bold text-gray-400" id="invDif${i}">0</td>
+      <td class="px-4 py-2 text-center">${badge}</td>
+    </tr>`;
+    })()}`).join('');
+}
+
+function onInvInput(el){
+  const i=parseInt(el.dataset.idx);
+  const bodega=document.getElementById('invBodega').value;
+  const it=(S.stock[bodega]||[])[i];
+  if(!it) return;
+  const conteo=parseInt(el.value)||0;
+  const dif=conteo-(it.stockActual??0);
+  const cell=document.getElementById('invDif'+i);
+  cell.textContent=(dif>=0?'+':'')+dif;
+  cell.className='px-4 py-2 text-center font-bold '+(dif>0?'text-green-600':dif<0?'text-red-500':'text-gray-400');
+}
+
+async function guardarInventario(){
+  const bodega=document.getElementById('invBodega').value;
+  if(!bodega){ showToast('Selecciona una bodega','error'); return; }
+  const items=S.stock[bodega]||[];
+  const inputs=document.querySelectorAll('#invBody input[data-idx]');
+  const batch=db.batch();
+  let changes=0;
+  const promises=[];
+  inputs.forEach(inp=>{
+    const i=parseInt(inp.dataset.idx);
+    const it=items[i];
+    if(!it||!it._id) return;
+    const conteo=parseInt(inp.value)||0;
+    if(conteo!==(it.stockActual??0)){
+      batch.update(db.collection('stock').doc(it._id),{stockActual:conteo});
+      promises.push(db.collection('historial').add({
+        tipo:'AJUSTE INVENTARIO',
+        item:it.item, talla:it.talla||'—', bodega,
+        trabajador:S.userDoc?.nombre||S.user?.email||'—',
+        marca:'—', recambio:false,
+        cantidad:conteo-(it.stockActual??0),
+        fecha:firebase.firestore.FieldValue.serverTimestamp(),
+        uid:S.user?.uid||'', email:S.user?.email||'', firma:null
+      }));
+      changes++;
+    }
+  });
+  if(changes===0){ showToast('Sin cambios que guardar','info'); return; }
+  await Promise.all([batch.commit(),...promises]);
+  showToast(`Inventario guardado · ${changes} cambio${changes>1?'s':''}`, 'ok');
+}
+
+function descargarPlanillaComprar(){
+  if(S.rol!=='admin'){ showToast('Solo admins pueden descargar esta planilla','error'); return; }
+  const wb=XLSX.utils.book_new();
+  Object.keys(S.stock).forEach(bodega=>{
+    const items=S.stock[bodega]||[];
+    const workersBodega=S.workers.filter(w=>!w._esOtro && sedeEnBodega(w.sede, bodega));
+    const header=['Artículo','Talla','Stock Actual','Stock Crítico','A Comprar'];
+    const rows=items.map(it=>{
+      const stockAct=it.stockActual??0;
+      // Calcular demanda dinámicamente desde workers reales
+      let demanda=0;
+      const tallaStr=String(it.talla||'-');
+      const normItem=norm(it.item);
+      workersBodega.forEach(w=>{
+        if(!w.tallas) return;
+        // Buscar talla del worker para este item (exact o normalizado)
+        let wTalla=w.tallas[it.item];
+        if(wTalla==null){
+          for(const [k,v] of Object.entries(w.tallas)){if(norm(k)===normItem){wTalla=v;break;}}
+        }
+        if(wTalla==null) return;
+        if(String(wTalla)!==tallaStr) return;
+        // Buscar entregas/año para el cargo de este worker
+        const cargoNorm=norm(w.cargo||'');
+        let ent=0;
+        for(const [cargo,itemMap] of Object.entries(S.entregas)){
+          if(norm(cargo)===cargoNorm){
+            // Buscar item exacto o normalizado en el mapa de entregas
+            ent=itemMap[it.item];
+            if(ent==null){for(const [k,v] of Object.entries(itemMap)){if(norm(k)===normItem){ent=v;break;}}}
+            ent=ent||0;
+            if(ent) break;
+          }
+        }
+        demanda+=ent;
+      });
+      // Si demanda=0 nadie usa esa talla → A Comprar = 0
+      if(demanda===0){ return [it.item,it.talla||'—',stockAct,0,0]; }
+      let critico=Math.round(demanda/2)+1;
+      const aComprar=Math.max(0,critico-stockAct);
+      return [it.item,it.talla||'—',stockAct,critico,aComprar];
+    });
+    const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
+    ws['!cols']=[{wch:30},{wch:8},{wch:14},{wch:14},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,ws,bodega.slice(0,31));
+  });
+  XLSX.writeFile(wb,'Planilla_A_Comprar_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ══════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ══════════════════════════════════════════════════════
+function switchTab(tabId){
+  ['tabE','tabI','tabH'].forEach(id=>{
+    document.getElementById(id).classList.remove('active');
+    document.getElementById('btnTab'+id.slice(3)).classList.remove('tab-active');
+  });
+  document.getElementById(tabId).classList.add('active');
+  document.getElementById('btnTab'+tabId.slice(3)).classList.add('tab-active');
+  // Al volver a Registro de Entregas, releer stock actualizado
+  if(tabId==='tabE'){
+    const entB = document.getElementById('entBodega').value;
+    if(entB){ refreshEntArticulo(entB); refreshEntStock(); }
+  }
+}
+
+function toggleAdmin(){
+  const panel=document.getElementById('adminPanel');
+  const btn=document.getElementById('adminToggleBtn');
+  S.adminOpen=!S.adminOpen;
+  if(S.adminOpen){
+    // Cerrar inventario si está abierto
+    document.getElementById('inventarioPanel').classList.add('hidden');
+    document.getElementById('inventarioToggleBtn').textContent='📦 Inventario';
+    panel.classList.remove('hidden'); btn.textContent='✖ Cerrar Admin';
+  } else { panel.classList.add('hidden'); btn.textContent='🔐 Panel Admin'; }
+}
+
+function toggleAcc(id){
+  const body=document.getElementById(id);
+  const icon=document.getElementById(id+'Icon');
+  const isOpen=body.classList.contains('open');
+  document.querySelectorAll('.acc-body.open').forEach(el=>el.classList.remove('open'));
+  document.querySelectorAll('[id$="Icon"]').forEach(el=>el.style.transform='');
+  if(!isOpen){ body.classList.add('open'); if(icon) icon.style.transform='rotate(180deg)'; }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// WIZARD AGREGAR NUEVO EPP
+// ════════════════════════════════════════════════════════════════════════
+
+let _eppW = {};  // estado del wizard
+
+const EPP_STEP_LABELS = [
+  'Paso 1 de 5 — Información básica',
+  'Paso 2 de 5 — Tallas disponibles',
+  'Paso 3 de 5 — Stock inicial por bodega',
+  'Paso 4 de 5 — Frecuencias de entrega por cargo',
+  'Paso 5 de 5 — Asignación a trabajadores',
+];
+
+function openEppWizard(){
+  _eppW = {
+    step: 1,
+    nombre: '',
+    formato: 'unidad',
+    bodegas: ['BULNES (1+3)', 'ROMERAL (Unificada)', 'ECOCORP'],
+    esTallaEstandar: true,
+    tallas: [],
+    stockInicial: {},   // { bodega: { talla: qty } }
+    frecuencias: {},    // { cargo: qty }
+    asignacion: {}      // { cargo: talla }  (talla asignada por cargo)
+  };
+  const modal = document.getElementById('eppWizardModal');
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+  _eppRenderStep();
+}
+
+function closeEppWizard(){
+  const modal = document.getElementById('eppWizardModal');
+  modal.classList.add('hidden');
+  modal.style.display = 'none';
+}
+
+function _eppRenderStep(){
+  const s = _eppW.step;
+  // Step dots
+  for(let i=1;i<=5;i++){
+    const dot = document.getElementById('eppDot'+i);
+    if(dot) dot.className = 'h-1.5 flex-1 rounded-full ' + (i<=s ? 'bg-vc-700' : 'bg-gray-200');
+  }
+  document.getElementById('eppStepLabel').textContent = EPP_STEP_LABELS[s-1];
+  document.getElementById('eppBtnPrev').classList.toggle('hidden', s===1);
+  document.getElementById('eppBtnNext').classList.toggle('hidden', s===5);
+  document.getElementById('eppBtnSave').classList.toggle('hidden', s!==5);
+
+  const content = document.getElementById('eppWizardContent');
+  if(s===1) content.innerHTML = _eppStep1();
+  else if(s===2) content.innerHTML = _eppStep2();
+  else if(s===3) content.innerHTML = _eppStep3();
+  else if(s===4) content.innerHTML = _eppStep4();
+  else if(s===5) content.innerHTML = _eppStep5();
+}
+
+function _eppStep1(){
+  const bodChecks = ['BULNES (1+3)','ROMERAL (Unificada)','ECOCORP'].map(b=>`
+    <label class="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" value="${b}" ${_eppW.bodegas.includes(b)?'checked':''} class="accent-vc-700" onchange="_eppToggleBodega('${b}',this.checked)">
+      <span class="text-sm text-gray-700">${b}</span>
+    </label>`).join('');
+  return `
+    <div>
+      <label class="label-sm">Nombre del EPP *</label>
+      <input id="eppNombre" type="text" class="input-base" placeholder="Ej: Guante de Nitrilo" value="${_eppW.nombre}"
+        oninput="_eppW.nombre=this.value.trim()">
+    </div>
+    <div>
+      <label class="label-sm">Formato</label>
+      <select id="eppFormato" class="input-base" onchange="_eppW.formato=this.value">
+        <option value="unidad" ${_eppW.formato==='unidad'?'selected':''}>Unidad</option>
+        <option value="par" ${_eppW.formato==='par'?'selected':''}>Par</option>
+        <option value="set" ${_eppW.formato==='set'?'selected':''}>Set</option>
+      </select>
+    </div>
+    <div>
+      <label class="label-sm">Aplica en bodegas</label>
+      <div class="flex flex-col gap-2 mt-1">${bodChecks}</div>
+    </div>`;
+}
+
+function _eppToggleBodega(b, checked){
+  if(checked){ if(!_eppW.bodegas.includes(b)) _eppW.bodegas.push(b); }
+  else { _eppW.bodegas = _eppW.bodegas.filter(x=>x!==b); }
+}
+
+function _eppStep2(){
+  const tallaRows = _eppW.tallas.map((t,i)=>`
+    <div class="flex items-center gap-2" id="eppTallaRow${i}">
+      <input type="text" value="${t}" class="input-base flex-1 text-sm" placeholder="Ej: S, M, L, 42, XL..."
+        oninput="_eppW.tallas[${i}]=this.value.trim()">
+      <button onclick="_eppRemoveTalla(${i})" class="text-red-400 hover:text-red-600 text-lg px-1">✕</button>
+    </div>`).join('');
+  return `
+    <div>
+      <label class="label-sm">¿Este EPP tiene tallas específicas?</label>
+      <div class="flex gap-4 mt-1">
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="radio" name="eppTallaType" value="estandar" ${_eppW.esTallaEstandar?'checked':''} class="accent-vc-700"
+            onchange="_eppW.esTallaEstandar=true;_eppW.tallas=[];_eppRenderStep()"> Talla estándar (única)
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="radio" name="eppTallaType" value="multitalla" ${!_eppW.esTallaEstandar?'checked':''} class="accent-vc-700"
+            onchange="_eppW.esTallaEstandar=false;_eppRenderStep()"> Con tallas
+        </label>
+      </div>
+    </div>
+    ${_eppW.esTallaEstandar
+      ? '<div class="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">Se creará como talla <strong>Estándar</strong> (ej: cascos, chalecos). No se pedirá talla al entregar.</div>'
+      : `<div>
+          <label class="label-sm">Tallas disponibles</label>
+          <div id="eppTallaList" class="space-y-2 mt-1">${tallaRows}</div>
+          <button onclick="_eppAddTalla()" class="text-vc-700 hover:text-vc-600 text-sm mt-2">+ Agregar talla</button>
+         </div>`
+    }`;
+}
+
+function _eppAddTalla(){ _eppW.tallas.push(''); _eppRenderStep(); }
+function _eppRemoveTalla(i){ _eppW.tallas.splice(i,1); _eppRenderStep(); }
+
+function _eppStep3(){
+  const tallasEfectivas = _eppW.esTallaEstandar ? ['-'] : _eppW.tallas.filter(t=>t);
+  let rows = '';
+  _eppW.bodegas.forEach(bod=>{
+    if(!_eppW.stockInicial[bod]) _eppW.stockInicial[bod]={};
+    tallasEfectivas.forEach(t=>{
+      if(_eppW.stockInicial[bod][t]===undefined) _eppW.stockInicial[bod][t]=0;
+      const label = t==='-' ? 'Estándar' : t;
+      rows += `<div class="flex items-center gap-3 py-1">
+        <span class="text-xs text-gray-500 w-36 truncate">${bod}</span>
+        <span class="text-xs text-gray-700 w-20">${label}</span>
+        <input type="number" min="0" value="${_eppW.stockInicial[bod][t]||0}"
+          class="w-20 text-sm border border-gray-200 rounded px-2 py-1 text-center"
+          onchange="_eppW.stockInicial['${bod}']['${t}']=parseInt(this.value)||0">
+        <span class="text-xs text-gray-400">unid.</span>
+      </div>`;
+    });
+  });
+  return `
+    <p class="text-sm text-gray-500">Ingresa el stock actual físico en cada bodega. Puedes dejarlo en 0 si aún no hay.</p>
+    <div class="bg-gray-50 rounded-lg p-3">
+      <div class="flex gap-3 pb-1 mb-1 border-b border-gray-200">
+        <span class="text-xs font-semibold text-gray-500 w-36">Bodega</span>
+        <span class="text-xs font-semibold text-gray-500 w-20">Talla</span>
+        <span class="text-xs font-semibold text-gray-500 w-20">Stock</span>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+function _eppStep4(){
+  const cargos = Object.keys(S.entregas||{}).sort();
+  if(!cargos.length){
+    return '<p class="text-sm text-gray-500">No hay cargos definidos aún. Puedes agregar frecuencias más tarde desde "Frecuencias de Entrega" en el Panel Admin.</p>';
+  }
+  const rows = cargos.map(cargo=>{
+    if(_eppW.frecuencias[cargo]===undefined) _eppW.frecuencias[cargo]=0;
+    return `<div class="flex items-center gap-3 py-1">
+      <span class="text-xs text-gray-700 flex-1">${cargo}</span>
+      <input type="number" min="0" max="52" value="${_eppW.frecuencias[cargo]}"
+        class="w-16 text-sm border border-gray-200 rounded px-2 py-1 text-center"
+        onchange="_eppW.frecuencias['${cargo}']=parseInt(this.value)||0">
+      <span class="text-xs text-gray-400">veces/año</span>
+    </div>`;
+  }).join('');
+  return `
+    <p class="text-sm text-gray-500">¿Cuántas veces al año recibe este EPP cada cargo? Pon 0 si no aplica.</p>
+    <div class="bg-gray-50 rounded-lg p-3 space-y-0.5">${rows}</div>`;
+}
+
+function _eppStep5(){
+  const tallasEfectivas = _eppW.esTallaEstandar ? ['-'] : _eppW.tallas.filter(t=>t);
+  const cargos = [...new Set(S.workers.filter(w=>w.activo!==false).map(w=>w.cargo||'Sin cargo'))].sort();
+  if(!cargos.length){
+    return '<p class="text-sm text-gray-500">No hay trabajadores activos. Agrega trabajadores primero.</p>';
+  }
+  const rows = cargos.map(cargo=>{
+    const nWorkers = S.workers.filter(w=>w.activo!==false && (w.cargo||'Sin cargo')===cargo).length;
+    const tallaOpts = [
+      '<option value="">— No asignar</option>',
+      ...tallasEfectivas.map(t=>{
+        const label = t==='-'?'Estándar':t;
+        const sel = (_eppW.asignacion[cargo]===t)?'selected':'';
+        return `<option value="${t}" ${sel}>${label}</option>`;
+      })
+    ].join('');
+    return `<div class="flex items-center gap-3 py-1.5 border-b border-gray-100 last:border-0">
+      <div class="flex-1">
+        <span class="text-sm text-gray-700">${cargo}</span>
+        <span class="text-xs text-gray-400 ml-1">(${nWorkers} trabajador${nWorkers!==1?'es':''})</span>
+      </div>
+      <select class="text-xs border border-gray-200 rounded px-2 py-1 w-32"
+        onchange="_eppW.asignacion['${cargo}']=this.value">
+        ${tallaOpts}
+      </select>
+    </div>`;
+  }).join('');
+  return `
+    <p class="text-sm text-gray-500">Asigna la talla de este EPP por cargo. Se aplicará a todos los trabajadores activos de cada cargo. Puedes ajustar individualmente después.</p>
+    <div class="bg-gray-50 rounded-lg p-3">${rows}</div>`;
+}
+
+function eppWizardNext(){
+  const s = _eppW.step;
+  // Validaciones por paso
+  if(s===1){
+    if(!_eppW.nombre){ showToast('Ingresa el nombre del EPP','error'); return; }
+    if(!_eppW.bodegas.length){ showToast('Selecciona al menos una bodega','error'); return; }
+  }
+  if(s===2 && !_eppW.esTallaEstandar){
+    _eppW.tallas = _eppW.tallas.filter(t=>t.trim());
+    if(!_eppW.tallas.length){ showToast('Agrega al menos una talla','error'); return; }
+  }
+  _eppW.step++;
+  _eppRenderStep();
+}
+
+function eppWizardPrev(){
+  if(_eppW.step > 1){ _eppW.step--; _eppRenderStep(); }
+}
+
+async function saveEppWizard(){
+  const btn = document.getElementById('eppBtnSave');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+
+  try{
+    const tallasEfectivas = _eppW.esTallaEstandar ? ['-'] : _eppW.tallas.filter(t=>t);
+    const nombre = _eppW.nombre;
+    const formato = _eppW.formato;
+
+    // 1. Crear docs de stock por bodega × talla
+    const batch1 = db.batch();
+    _eppW.bodegas.forEach(bodega=>{
+      tallasEfectivas.forEach(talla=>{
+        const stockAct = (_eppW.stockInicial[bodega]||{})[talla]||0;
+        const ref = db.collection('stock').doc();
+        batch1.set(ref,{item:nombre, talla, bodega, formato, stockActual:stockAct, stockCritico:0, cargos:[]});
+      });
+    });
+    await batch1.commit();
+
+    // 2. Actualizar config/entregas — agregar este EPP a cada cargo con frecuencia > 0
+    const entregasSnap = await db.collection('config').doc('entregas').get();
+    const entData = (entregasSnap.exists && entregasSnap.data().data) ? entregasSnap.data().data : {};
+    Object.entries(_eppW.frecuencias).forEach(([cargo, qty])=>{
+      if(qty>0){
+        if(!entData[cargo]) entData[cargo]={};
+        entData[cargo][nombre] = qty;
+      }
+    });
+    await db.collection('config').doc('entregas').set({data: entData});
+
+    // 3. Actualizar tallas de trabajadores activos por cargo
+    const workersSnap = await db.collection('workers').get();
+    const batch2 = db.batch();
+    workersSnap.forEach(doc=>{
+      const w = doc.data();
+      if(w.activo===false) return;
+      const cargo = w.cargo||'Sin cargo';
+      const talla = _eppW.asignacion[cargo];
+      if(talla !== undefined && talla !== ''){
+        const nuevosTallas = {...(w.tallas||{}), [nombre]: talla};
+        batch2.update(doc.ref, {tallas: nuevosTallas});
+      }
+    });
+    await batch2.commit();
+
+    closeEppWizard();
+    showToast(`EPP "${nombre}" agregado correctamente en ${_eppW.bodegas.length} bodega(s)`);
+
+  } catch(e){
+    showToast('Error al guardar: '+e.message,'error');
+    btn.disabled=false; btn.textContent='💾 Guardar todo';
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// FRECUENCIAS DE ENTREGA (Panel Admin)
+// ════════════════════════════════════════════════════════════════════════
+
+function renderEntregasAdmin(){
+  const container = document.getElementById('entregasAdminList');
+  if(!container) return;
+
+  // S.entregas = { cargo: { item: count } }
+  const cargos = Object.keys(S.entregas||{}).sort();
+
+  if(!cargos.length){
+    container.innerHTML = '<p class="text-gray-400 text-xs text-center py-3">Sin frecuencias cargadas. Importa el Excel primero o agrega manualmente.</p>';
+    return;
+  }
+
+  container.innerHTML = cargos.map(cargo=>{
+    const items = Object.entries(S.entregas[cargo]||{}).sort((a,b)=>a[0].localeCompare(b[0],'es'));
+    const rows = items.map(([item, count])=>`
+      <div class="flex items-center gap-2 py-0.5">
+        <span class="text-xs text-gray-300 flex-1 truncate" title="${item}">${item}</span>
+        <input type="number" min="0" max="52" step="1"
+          data-cargo="${cargo}" data-item="${item}"
+          value="${count}"
+          class="w-16 text-xs text-center border border-gray-600 bg-gray-700 text-white rounded px-1 py-0.5">
+        <span class="text-xs text-gray-500">/ año</span>
+        <button onclick="deleteEntregaRow('${cargo}','${item}')" class="text-red-400 hover:text-red-300 text-xs px-1">✕</button>
+      </div>`).join('');
+
+    return `<div class="bg-gray-700 rounded-lg p-3" data-cargo-block="${cargo}">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-vc-400">${cargo}</span>
+        <button onclick="addEntregaRow('${cargo}')" class="text-xs text-vc-400 hover:text-vc-300">+ Agregar EPP</button>
+      </div>
+      <div class="space-y-0.5" id="entRows_${cargo.replace(/[^a-z0-9]/gi,'_')}">${rows}</div>
+    </div>`;
+  }).join('');
+
+  // Botón agregar cargo
+  const addCargoBtn = `<button onclick="addEntregaCargo()" class="text-xs text-vc-400 hover:text-vc-300 w-full text-center py-1">+ Agregar cargo nuevo</button>`;
+  container.insertAdjacentHTML('beforeend', addCargoBtn);
+}
+
+function addEntregaRow(cargo){
+  const item = prompt('Nombre del EPP:');
+  if(!item||!item.trim()) return;
+  if(!S.entregas[cargo]) S.entregas[cargo]={};
+  S.entregas[cargo][item.trim()] = 1;
+  renderEntregasAdmin();
+}
+
+function deleteEntregaRow(cargo, item){
+  if(!S.entregas[cargo]) return;
+  delete S.entregas[cargo][item];
+  if(!Object.keys(S.entregas[cargo]).length) delete S.entregas[cargo];
+  renderEntregasAdmin();
+}
+
+function addEntregaCargo(){
+  const cargo = prompt('Nombre del cargo:');
+  if(!cargo||!cargo.trim()) return;
+  if(!S.entregas[cargo.trim()]) S.entregas[cargo.trim()]={};
+  renderEntregasAdmin();
+}
+
+async function saveEntregasAdmin(){
+  // Leer todos los inputs del DOM y construir el objeto
+  const data = {};
+  document.querySelectorAll('#entregasAdminList input[data-cargo]').forEach(inp=>{
+    const cargo = inp.dataset.cargo;
+    const item  = inp.dataset.item;
+    const val   = parseInt(inp.value)||0;
+    if(!data[cargo]) data[cargo]={};
+    data[cargo][item] = val;
+  });
+
+  try{
+    await db.collection('config').doc('entregas').set({data});
+    S.entregas = data;
+    showToast('Frecuencias guardadas');
+  } catch(e){
+    showToast('Error al guardar: '+e.message,'error');
+  }
+}
+
+
+function _sugerirTallasPorCargo(){
+  const cargo = ((document.getElementById('wCargo')||{}).value||'').trim();
+  if(!cargo){ showToast('Ingresa el cargo primero','error'); return; }
+
+  // Workers activos con el mismo cargo (excluir el que se está editando)
+  const docIdActual = (document.getElementById('wDocId')||{}).value||'';
+  const pares = S.workers.filter(w=>
+    w.activo!==false &&
+    norm(w.cargo||'')===norm(cargo) &&
+    w._id !== docIdActual
+  );
+
+  if(!pares.length){
+    showToast(`No hay otros trabajadores con cargo "${cargo}" para sugerir tallas`,'error');
+    return;
+  }
+
+  let asignados = 0;
+  document.querySelectorAll('#wTallasContainer select[data-item]').forEach(sel=>{
+    const item = sel.dataset.item;
+    const tallas = pares
+      .map(w=>(w.tallas||{})[item])
+      .filter(t=>t!==undefined && t!==null && t!=='');
+    if(!tallas.length) return;
+    // Talla más común
+    const freq={};
+    tallas.forEach(t=>freq[t]=(freq[t]||0)+1);
+    const masComun = Object.entries(freq).sort((a,b)=>b[1]-a[1])[0][0];
+    const opts = Array.from(sel.options).map(o=>o.value);
+    if(opts.includes(masComun)){ sel.value=masComun; asignados++; }
+  });
+
+  showToast(`${asignados} EPP(s) sugeridos basándose en ${pares.length} trabajador(es) con cargo "${cargo}"`);
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// GESTIÓN DE TRABAJADORES (Panel Admin)
+// ════════════════════════════════════════════════════════════════════════
+
+function renderWorkerAdmin(){
+  const container = document.getElementById('workerAdminList');
+  if(!container) return;
+  const q = norm((document.getElementById('workerAdminSearch')||{}).value||'');
+  const list = S.workers.map((w,i)=>({...w, _idx:i}))
+    .filter(w=> !q || norm(w.nombre||'').includes(q));
+  
+  if(!list.length){
+    container.innerHTML='<p class="text-gray-400 text-sm text-center py-4">Sin resultados</p>';
+    return;
+  }
+
+  container.innerHTML = list.map(w=>{
+    const docId = w._id||'';
+    const activo = w.activo !== false;
+    const badgeCls = activo ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500';
+    const badgeTxt = activo ? 'Activo' : 'De baja';
+    return `<div class="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm">
+      <div class="flex-1 min-w-0">
+        <span class="font-medium text-gray-800">${w.nombre||'—'}</span>
+        <span class="text-gray-400 text-xs ml-2">${w.cargo||''} · ${w.sede||''}</span>
+      </div>
+      <div class="flex items-center gap-2 ml-2 shrink-0">
+        <span class="text-xs px-1.5 py-0.5 rounded ${badgeCls}">${badgeTxt}</span>
+        <button onclick="openWorkerModal('${docId}')" class="text-blue-600 hover:text-blue-800 text-xs px-2 py-0.5 border border-blue-200 rounded">Editar</button>
+        <button onclick="toggleWorkerActivo('${docId}',${activo})" class="text-xs px-2 py-0.5 border rounded ${activo?'text-red-500 border-red-200 hover:text-red-700':'text-green-600 border-green-200 hover:text-green-800'}">${activo?'Dar de baja':'Reactivar'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openWorkerModal(docId){
+  const modal = document.getElementById('workerModal');
+  if(!modal) return;
+
+  const worker = docId ? (S.workers.find(w=>w._id===docId)||{}) : {};
+  const isEdit = !!docId;
+
+  document.getElementById('workerModalTitle').textContent = isEdit ? 'Editar Trabajador' : 'Agregar Trabajador';
+  document.getElementById('wNombre').value = worker.nombre||'';
+  document.getElementById('wCargo').value  = worker.cargo||'';
+  document.getElementById('wSede').value   = worker.sede||'';
+  document.getElementById('wDocId').value  = docId||'';
+
+  const activoWrap = document.getElementById('wActivoWrap');
+  if(isEdit){
+    activoWrap.classList.remove('hidden');
+    const activo = worker.activo !== false;
+    document.getElementById('wActivoTrue').checked  = activo;
+    document.getElementById('wActivoFalse').checked = !activo;
+  } else {
+    activoWrap.classList.add('hidden');
+  }
+
+  // Renderizar tallas
+  _renderWorkerTallas(worker.tallas||{});
+
+  modal.classList.remove('hidden');
+  modal.style.display='flex';
+}
+
+function _renderWorkerTallas(tallas){
+  const container = document.getElementById('wTallasContainer');
+  if(!container) return;
+
+  // Obtener items únicos del stock (sin duplicar por bodega)
+  const itemsMap = {}; // itemName -> Set de tallas disponibles
+  S.stock && Object.values(S.stock).forEach(arr=>{
+    (arr||[]).forEach(it=>{
+      if(!it.item) return;
+      if(!itemsMap[it.item]) itemsMap[it.item] = new Set();
+      if(it.talla && it.talla!=='-') itemsMap[it.item].add(it.talla);
+    });
+  });
+
+  const items = Object.keys(itemsMap).sort();
+  if(!items.length){
+    container.innerHTML='<p class="text-gray-400 text-xs text-center py-2">Sin artículos en stock. Importa el Excel primero.</p>';
+    return;
+  }
+
+  container.innerHTML = items.map(item=>{
+    const tallasDisp = ['', '-', ...Array.from(itemsMap[item]).sort()];
+    const tallaActual = tallas[item]||'';
+    const opts = tallasDisp.map(t=>{
+      const label = t==='' ? '— No asignado' : t==='-' ? 'Estándar' : t;
+      return `<option value="${t}" ${tallaActual===t?'selected':''}>${label}</option>`;
+    }).join('');
+    return `<div class="flex items-center gap-2">
+      <span class="text-xs text-gray-600 flex-1 truncate" title="${item}">${item}</span>
+      <select data-item="${item}" class="text-xs border border-gray-200 rounded px-1.5 py-0.5 bg-white w-32 shrink-0">${opts}</select>
+    </div>`;
+  }).join('');
+}
+
+function closeWorkerModal(){
+  const modal = document.getElementById('workerModal');
+  if(modal){ modal.classList.add('hidden'); modal.style.display='none'; }
+}
+
+async function saveWorkerModal(){
+  const docId  = (document.getElementById('wDocId')||{}).value||'';
+  const nombre = ((document.getElementById('wNombre')||{}).value||'').trim();
+  const cargo  = ((document.getElementById('wCargo')||{}).value||'').trim();
+  const sede   = ((document.getElementById('wSede')||{}).value||'').trim();
+  const activoFalseEl = document.getElementById('wActivoFalse');
+  const activo = activoFalseEl ? !activoFalseEl.checked : true;
+
+  if(!nombre){ showToast('El nombre es obligatorio','error'); return; }
+  if(!sede)  { showToast('Selecciona una sede','error'); return; }
+
+  // Leer tallas del contenedor
+  const tallas = {};
+  document.querySelectorAll('#wTallasContainer select[data-item]').forEach(sel=>{
+    if(sel.value !== '') tallas[sel.dataset.item] = sel.value;
+  });
+
+  try{
+    if(docId){
+      await db.collection('workers').doc(docId).update({nombre,cargo,sede,tallas,activo});
+      showToast('Trabajador actualizado');
+    } else {
+      await db.collection('workers').add({nombre,cargo,sede,tallas,activo:true});
+      showToast('Trabajador agregado');
+    }
+    closeWorkerModal();
+  } catch(e){
+    showToast('Error al guardar: '+e.message,'error');
+  }
+}
+
+async function toggleWorkerActivo(docId, currentlyActivo){
+  if(!docId){ showToast('Error: sin ID','error'); return; }
+  const newVal = !currentlyActivo;
+  const txt = newVal ? 'reactivar' : 'dar de baja';
+  if(!confirm(`¿Deseas ${txt} a este trabajador?`)) return;
+  try{
+    await db.collection('workers').doc(docId).update({activo: newVal});
+    showToast(newVal ? 'Trabajador reactivado' : 'Trabajador dado de baja');
+  } catch(e){
+    showToast('Error: '+e.message,'error');
+  }
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// BOOTSTRAP — se ejecuta al cargar la página
+// ════════════════════════════════════════════════════════════════════════
+(function init(){
+  const cfg = {
+    apiKey: "AIzaSyD-CF02A6BpO8oX6mUANWhvg_uZpWdyNLY",
+    authDomain: "epp-verdecorp.firebaseapp.com",
+    projectId: "epp-verdecorp",
+    storageBucket: "epp-verdecorp.firebasestorage.app",
+    messagingSenderId: "385333496685",
+    appId: "1:385333496685:web:43de925b10923dac402864"
+  };
+  const hash = window.location.hash;
+  if(hash.startsWith('#firma/')){
+    const docId = hash.slice(7).split('/')[0];
+    if(!firebase.apps.length) firebase.initializeApp(cfg);
+    db = firebase.firestore();
+    setScreen('scrFirmaPublica');
+    firebase.auth().signInAnonymously()
+      .then(()=> initFirmaPublica(docId))
+      .catch(e=>{
+        const el=document.getElementById('firmaPublicaInfo');
+        if(el) el.innerHTML='<p class="text-red-500 text-center font-semibold">Error de conexion: '+e.message+'</p>';
+      });
+    return;
+  }
+  initFirebase(cfg);
+})();
+</script>
+
+<!-- MODAL GESTIÓN TRABAJADORES -->
+<div id="workerModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col" style="max-height:90vh">
+    <div class="p-6 pb-3 border-b border-gray-100">
+      <h3 id="workerModalTitle" class="font-bold text-gray-800 text-lg">Agregar Trabajador</h3>
+    </div>
+    <div class="overflow-y-auto flex-1 p-6 space-y-4">
+      <div>
+        <label class="label-sm">Nombre completo *</label>
+        <input id="wNombre" type="text" class="input-base" placeholder="Nombre Apellido Apellido">
+      </div>
+      <div>
+        <label class="label-sm">Cargo *</label>
+        <input id="wCargo" type="text" class="input-base" placeholder="Operario, Supervisor, Operador...">
+      </div>
+      <div>
+        <label class="label-sm">Sede (Bodega) *</label>
+        <select id="wSede" class="input-base">
+          <option value="">Seleccionar...</option>
+          <option value="BULNES 1">BULNES 1</option>
+          <option value="BULNES 3">BULNES 3</option>
+          <option value="ROMERAL (Unificada)">ROMERAL (Unificada)</option>
+          <option value="ECOCORP">ECOCORP</option>
+        </select>
+      </div>
+      <div id="wActivoWrap" class="hidden">
+        <label class="label-sm">Estado</label>
+        <div class="flex gap-3">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="wActivo" id="wActivoTrue" value="true" checked class="accent-vc-700"> Activo
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="wActivo" id="wActivoFalse" value="false" class="accent-red-500"> De baja
+          </label>
+        </div>
+      </div>
+      <!-- Tallas EPP -->
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="label-sm mb-0">Tallas EPP asignadas</label>
+          <button onclick="_sugerirTallasPorCargo()" class="text-xs text-vc-700 hover:text-vc-600 underline">✨ Sugerir por cargo</button>
+        </div>
+        <p class="text-xs text-gray-400 mb-2">Deja en blanco los EPPs que no corresponden a este trabajador. "Estándar" = talla única.</p>
+        <div id="wTallasContainer" class="space-y-1.5 bg-gray-50 rounded-lg p-3 max-h-52 overflow-y-auto">
+          <p class="text-gray-400 text-xs text-center py-2">Cargando EPPs...</p>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" id="wDocId">
+    <div class="flex gap-3 p-6 pt-3 border-t border-gray-100">
+      <button onclick="saveWorkerModal()"
+        class="btn-primary bg-vc-700 hover:bg-vc-600 text-white flex-1">💾 Guardar</button>
+      <button onclick="closeWorkerModal()"
+        class="btn-primary bg-gray-200 hover:bg-gray-300 text-gray-700 flex-1">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ WIZARD AGREGAR EPP ═══ -->
+<div id="eppWizardModal" class="fixed inset-0 bg-black/60 z-50 hidden items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col" style="max-height:92vh">
+    <!-- Header -->
+    <div class="p-5 pb-3 border-b border-gray-100">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-gray-800 text-lg">➕ Agregar nuevo EPP</h3>
+        <button onclick="closeEppWizard()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+      </div>
+      <!-- Step indicator -->
+      <div class="flex items-center gap-1" id="eppStepDots">
+        <div class="h-1.5 flex-1 rounded-full bg-vc-700" id="eppDot1"></div>
+        <div class="h-1.5 flex-1 rounded-full bg-gray-200" id="eppDot2"></div>
+        <div class="h-1.5 flex-1 rounded-full bg-gray-200" id="eppDot3"></div>
+        <div class="h-1.5 flex-1 rounded-full bg-gray-200" id="eppDot4"></div>
+        <div class="h-1.5 flex-1 rounded-full bg-gray-200" id="eppDot5"></div>
+      </div>
+      <p id="eppStepLabel" class="text-xs text-gray-400 mt-1.5">Paso 1 de 5 — Información básica</p>
+    </div>
+    <!-- Content -->
+    <div id="eppWizardContent" class="overflow-y-auto flex-1 p-5 space-y-4"></div>
+    <!-- Footer -->
+    <div class="flex gap-3 p-5 pt-3 border-t border-gray-100">
+      <button id="eppBtnPrev" onclick="eppWizardPrev()"
+        class="btn-primary bg-gray-200 hover:bg-gray-300 text-gray-700 flex-1 hidden">← Anterior</button>
+      <button id="eppBtnNext" onclick="eppWizardNext()"
+        class="btn-primary bg-vc-700 hover:bg-vc-600 text-white flex-1">Siguiente →</button>
+      <button id="eppBtnSave" onclick="saveEppWizard()"
+        class="btn-primary bg-vc-700 hover:bg-vc-600 text-white flex-1 hidden">💾 Guardar todo</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
