@@ -827,6 +827,7 @@
               <option value="">Todos los tipos</option>
               <option value="ENTREGA">Solo Entregas</option>
               <option value="ENTRADA">Solo Entradas de Camión</option>
+              <option value="TRASPASO">Solo Traspasos</option>
             </select>
           </div>
           <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -2361,6 +2362,88 @@ function exportarExcel(){
   const fecha=new Date().toLocaleDateString('es-CL').replace(/\//g,'-');
   XLSX.writeFile(wb,`EPP_Verdecorp_Stock_${fecha}.xlsx`);
   showToast('Excel exportado correctamente.','ok');
+}
+
+function onTrpOrigen(){
+  const b=document.getElementById('trpOrigen').value;
+  document.getElementById('trpArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
+  document.getElementById('trpStockInfo').textContent='—';
+  document.getElementById('trpBuscarArt').value='';
+  if(!b) return;
+  _fillTrpArticulos(b,'');
+}
+function filtrarTrpArticulo(){
+  const b=document.getElementById('trpOrigen').value;
+  if(!b) return;
+  _fillTrpArticulos(b,(document.getElementById('trpBuscarArt').value||'').trim());
+}
+function _fillTrpArticulos(bodega,busqueda){
+  const q=norm(busqueda);
+  const sel=document.getElementById('trpArticulo');
+  const prev=sel.value;
+  sel.innerHTML='<option value="">Seleccionar artículo...</option>';
+  (S.stock[bodega]||[]).filter(it=>!q||norm(it.item).includes(q)).forEach(it=>{
+    const o=document.createElement('option');
+    o.value=it.item+'|'+it.talla;
+    o.textContent=it.item+(it.talla&&it.talla!=='-'?' — '+it.talla:'')+' (Stock: '+it.stockActual+')';
+    sel.appendChild(o);
+  });
+  if(prev) sel.value=prev;
+  onTrpArticulo();
+}
+function onTrpArticulo(){
+  const b=document.getElementById('trpOrigen').value;
+  const v=document.getElementById('trpArticulo').value;
+  const info=document.getElementById('trpStockInfo');
+  if(!b||!v){ info.textContent='—'; return; }
+  const [item,talla]=v.split('|');
+  const found=(S.stock[b]||[]).find(it=>it.item===item&&it.talla===talla);
+  info.textContent=found?found.stockActual+' unidades disponibles':'—';
+}
+async function registrarTraspaso(){
+  if(S.rol!=='admin'&&S.rol!=='prevencionista'){ showToast('Sin permiso.','warn'); return; }
+  const origen =document.getElementById('trpOrigen').value;
+  const destino=document.getElementById('trpDestino').value;
+  const artVal =document.getElementById('trpArticulo').value;
+  const cant   =parseInt(document.getElementById('trpCantidad').value)||0;
+  const motivo =document.getElementById('trpMotivo').value.trim();
+  const conf   =document.getElementById('trpConfirm');
+  if(!origen){  alert('Selecciona la bodega de origen.');  return; }
+  if(!destino){ alert('Selecciona la bodega de destino.'); return; }
+  if(origen===destino){ alert('Origen y destino deben ser distintos.'); return; }
+  if(!artVal){  alert('Selecciona un artículo.'); return; }
+  if(cant<=0){  alert('La cantidad debe ser mayor a 0.'); return; }
+  const [item,talla]=artVal.split('|');
+  const stockOrigen=(S.stock[origen]||[]).find(it=>it.item===item&&it.talla===talla);
+  if(!stockOrigen){ alert('Artículo no encontrado en bodega de origen.'); return; }
+  if(cant>stockOrigen.stockActual){ alert('Cantidad supera el stock disponible ('+stockOrigen.stockActual+' unidades).'); return; }
+  conf.textContent='Registrando...'; conf.classList.remove('hidden');
+  try{
+    await db.collection('stock').doc(stockOrigen.docId).update({stockActual:firebase.firestore.FieldValue.increment(-cant)});
+    const destSnap=await db.collection('stock').where('item','==',item).where('talla','==',talla).where('bodega','==',destino).get();
+    if(!destSnap.empty){
+      await destSnap.docs[0].ref.update({stockActual:firebase.firestore.FieldValue.increment(cant)});
+    } else {
+      await db.collection('stock').add({item,talla,bodega:destino,stockActual:cant,stockMinimo:0});
+    }
+    await db.collection('historial').add({
+      tipo:'TRASPASO',fecha:new Date().toISOString(),item,talla,cantidad:cant,
+      bodegaOrigen:origen,bodegaDestino:destino,motivo:motivo||'',
+      registradoPor:S.userEmail||'',workerNombre:S.userEmail||''
+    });
+    conf.textContent='✅ Traspaso registrado';
+    limpiarTraspaso();
+  } catch(e){
+    console.error(e);
+    conf.textContent='❌ Error: '+e.message;
+  }
+}
+function limpiarTraspaso(){
+  ['trpOrigen','trpDestino','trpArticulo'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('trpBuscarArt').value='';
+  document.getElementById('trpCantidad').value='';
+  document.getElementById('trpMotivo').value='';
+  document.getElementById('trpStockInfo').textContent='—';
 }
 
 async function deleteHistRecord(docId){
