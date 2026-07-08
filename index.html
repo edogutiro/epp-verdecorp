@@ -1664,9 +1664,16 @@ function refreshEntArticulo(bodega){
   sel.innerHTML='<option value="">Seleccionar artículo...</option>';
   const w=getWorker();
   const seen=new Set();
+  const _ncargo = w ? norm(w.cargo||'Sin cargo') : '';
+  const _entCargo = w ? (Object.entries(S.entregas).find(([k])=>norm(k)===_ncargo)||[null,{}])[1] : {};
   (S.stock[bodega]||[]).forEach(it=>{
     // Si hay trabajador seleccionado (y no es Otro/Visita), solo mostrar EPP que le corresponden
-    if(w && !w._esOtro && workerTalla(w, it.item)==null) return;
+    // Mostrar si: está en tallas del trabajador O está en la planilla de su cargo
+    if(w && !w._esOtro){
+      const tieneTalla = workerTalla(w, it.item) !== null;
+      const enCargo   = _entCargo && _entCargo[it.item] !== undefined;
+      if(!tieneTalla && !enCargo) return;
+    }
     if(!seen.has(norm(it.item))){ seen.add(norm(it.item));
       const o=document.createElement('option');
       o.value=it.item; o.textContent=it.item;
