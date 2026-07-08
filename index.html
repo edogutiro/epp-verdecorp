@@ -1308,7 +1308,6 @@ function loadApp(){
   // Botones solo admin
   if(S.rol==='admin'){
     document.getElementById('adminToggleBtn').classList.remove('hidden');
-    document.getElementById('btnEditTalla').classList.remove('hidden');
   }
 
   setScreen('scrApp');
@@ -2498,14 +2497,14 @@ function onTrpOrigen(){
   const b=document.getElementById('trpOrigen').value;
   document.getElementById('trpArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
   document.getElementById('trpStockInfo').textContent='—';
-  document.getElementById('trpBuscarArt').value='';
+  
   if(!b) return;
   _fillTrpArticulos(b,'');
 }
 function filtrarTrpArticulo(){
   const b=document.getElementById('trpOrigen').value;
   if(!b) return;
-  _fillTrpArticulos(b,(document.getElementById('trpBuscarArt').value||'').trim());
+  _fillTrpArticulos(b,'');
 }
 function _fillTrpArticulos(bodega,busqueda){
   const sel=document.getElementById('trpArticulo');
@@ -2570,7 +2569,7 @@ async function registrarTraspaso(){
 }
 function limpiarTraspaso(){
   ['trpOrigen','trpDestino','trpArticulo'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('trpBuscarArt').value='';
+  
   document.getElementById('trpCantidad').value='';
   document.getElementById('trpMotivo').value='';
   document.getElementById('trpStockInfo').textContent='—';
