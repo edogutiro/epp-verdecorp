@@ -630,18 +630,10 @@
               <div id="entregasInfo" class="hidden mt-1.5 px-3 py-2 bg-vc-50 border border-vc-200 rounded-lg text-xs text-vc-800 leading-relaxed"></div>
             </div>
             <div>
-              <label class="label-sm" id="entTallaLabel">Talla — Autodetectada de Matriz EPP</label>
-              <div class="flex gap-2 items-center">
-                <input id="entTalla" type="text" readonly placeholder="—"
-                  class="input-base bg-gray-50 cursor-not-allowed text-gray-600 flex-1"
-                  oninput="onEntTallaEdit()"/>
-                <button id="btnEditTalla" onclick="toggleTallaEdit()"
-                  title="Solo admins pueden editar la talla"
-                  class="hidden w-9 h-9 flex items-center justify-center rounded-lg
-                  border border-gray-300 hover:border-orange-400 hover:text-orange-600 text-gray-400 transition">
-                  ✏️
-                </button>
-              </div>
+              <label class="label-sm" id="entTallaLabel">Talla</label>
+              <select id="entTalla" onchange="onTallaChange()" class="input-base">
+                <option value="">— Sin talla —</option>
+              </select>
               <!-- Guardar talla permanentemente (solo admin, solo en modo edición) -->
               <div id="guardarTallaWrap" class="hidden mt-2 flex items-center gap-2 bg-vc-50
                 border border-vc-200 rounded-lg px-3 py-2">
@@ -1712,11 +1704,17 @@ function onEntArticuloChange(w){
   const nombre=document.getElementById('entArticulo').value;
   const b=document.getElementById('entBodega').value;
   if(!nombre){ document.getElementById('entStockInfo').textContent='—'; actualizarContadorEntregas(null,''); return; }
-  // Talla autodetectada
+  // Poblar select de tallas con las disponibles en bodega para este artículo
+  const tallaSel = document.getElementById('entTalla');
+  const tallasDisp = [...new Set((S.stock[b]||[]).filter(it=>norm(it.item)===norm(nombre)).map(it=>it.talla||'-').filter(t=>t))];
+  const prevTalla = tallaSel.value;
+  tallaSel.innerHTML = '<option value="">— Sin talla —</option>';
+  tallasDisp.forEach(t=>{ const o=document.createElement('option'); o.value=t; o.textContent=t==='-'||t==='Estándar'?'Estándar':t; tallaSel.appendChild(o); });
+  // Pre-seleccionar talla del trabajador si existe
   const tDetectada = w ? workerTalla(w, nombre) : null;
-  const tFinal = (tDetectada && tDetectada!=='-') ? tDetectada : '';
-  const tallaInp=document.getElementById('entTalla');
-  if(!tallaInp.dataset.editMode){ tallaInp.value=tFinal; tallaInp.readOnly=true; }
+  const tFinal = (tDetectada && tDetectada!=='-') ? tDetectada : (tallasDisp.length===1 ? tallasDisp[0] : prevTalla);
+  if(tallasDisp.includes(tFinal)) tallaSel.value = tFinal;
+  else if(tallasDisp.length===1) tallaSel.value = tallasDisp[0];
   refreshEntStock();
   // Perfil
   if(w) updateWorkerProfile(w, nombre);
@@ -1770,7 +1768,23 @@ function actualizarContadorEntregas(w, nombre){
   el.classList.remove('hidden');
 }
 
-function onEntTallaEdit(){ refreshEntStock(); }
+function onEntTallaEdit(){ onTallaChange(); }
+function onTallaChange(){
+  refreshEntStock();
+  const w=getWorker();
+  if(!w||w._esOtro){ document.getElementById('guardarTallaWrap').classList.add('hidden'); return; }
+  const nombre=document.getElementById('entArticulo').value;
+  const tallaActual=document.getElementById('entTalla').value;
+  const tallaWorker=workerTalla(w,nombre)||'';
+  const wrap=document.getElementById('guardarTallaWrap');
+  const lbl=document.getElementById('guardarTallaLabel');
+  if(tallaActual && tallaActual!=='-' && tallaActual!==tallaWorker){
+    if(lbl) lbl.textContent='💾 Guardar talla '+tallaActual+' en perfil del trabajador';
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+}
 
 function refreshEntStock(){
   const b=document.getElementById('entBodega').value;
@@ -1859,27 +1873,7 @@ function updateWorkerProfile(w, activeItem=''){
   panel.classList.remove('hidden');
 }
 
-function toggleTallaEdit(){
-  if(S.rol!=='admin'){ showToast('Solo el administrador puede editar la talla.','warn'); return; }
-  const inp=document.getElementById('entTalla');
-  const wrap=document.getElementById('guardarTallaWrap');
-  const chk=document.getElementById('guardarTallaCheck');
-  if(inp.dataset.editMode){
-    delete inp.dataset.editMode; inp.readOnly=true;
-    inp.classList.remove('border-orange-400');
-    wrap.classList.add('hidden'); chk.checked=false;
-  } else {
-    inp.dataset.editMode='1'; inp.readOnly=false;
-    inp.classList.add('border-orange-400'); inp.focus();
-    // Mostrar checkbox solo si hay trabajador seleccionado
-    const w=getWorker();
-    if(w){
-      document.getElementById('guardarTallaLabel').textContent=
-        `💾 Guardar esta talla en el perfil de ${w.nombre.split(' ')[0]}`;
-      wrap.classList.remove('hidden');
-    }
-  }
-}
+function toggleTallaEdit(){ /* select always editable */ }
 
 // ══════════════════════════════════════════════════════
 // FIRMA DIGITAL
@@ -2282,10 +2276,7 @@ function limpiarEntrega(clearBodega=true){
   document.getElementById('entOtroWrap').classList.add('hidden');
   document.getElementById('entOtroNombre').value='';
   document.getElementById('entArticulo').innerHTML='<option value="">Seleccionar artículo...</option>';
-  document.getElementById('entTalla').value='';
-  document.getElementById('entTalla').readOnly=true;
-  document.getElementById('entTalla').classList.remove('border-orange-400');
-  delete document.getElementById('entTalla').dataset.editMode;
+  document.getElementById('entTalla').innerHTML='<option value="">— Sin talla —</option>';
   document.getElementById('guardarTallaWrap').classList.add('hidden');
   document.getElementById('guardarTallaCheck').checked=false;
   document.getElementById('entCantidad').value='';
