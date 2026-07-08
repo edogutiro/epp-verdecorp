@@ -613,7 +613,7 @@
             </div>
             <div>
               <label class="label-sm">Trabajador *</label>
-              <input id="entBuscarTrab" type="text" placeholder="🔍 Buscar trabajador..." class="input-base mb-1.5" oninput="filtrarTrabajador()" autocomplete="off">
+              
               <select id="entTrabajador" onchange="onEntTrabajador()" class="input-base">
                 <option value="">Seleccionar trabajador...</option>
               </select>
@@ -721,7 +721,7 @@
             </div>
             <div>
               <label class="label-sm">Artículo EPP *</label>
-              <input id="camBuscarArt" type="text" placeholder="🔍 Buscar artículo..." class="input-base mb-1.5" oninput="filtrarCamArticulo()" autocomplete="off">
+              
               <select id="camArticulo" onchange="onCamArticulo()" class="input-base">
                 <option value="">Seleccionar artículo...</option>
               </select>
@@ -769,7 +769,7 @@
           </div>
           <div>
             <label class="label-sm">Artículo EPP *</label>
-            <input id="trpBuscarArt" type="text" placeholder="🔍 Buscar artículo..." class="input-base mb-1.5" oninput="filtrarTrpArticulo()" autocomplete="off">
+            
             <select id="trpArticulo" onchange="onTrpArticulo()" class="input-base">
               <option value="">Seleccionar artículo...</option>
             </select>
@@ -1172,6 +1172,135 @@ async function enviarRecuperacion(){
 }
 function showLogin(){ ['registerForm','recuperarForm'].forEach(id=>document.getElementById(id).classList.add('hidden')); document.getElementById('loginForm').classList.remove('hidden'); }
 
+
+// ══════════════════════════════════════════════════════
+// COMBOBOX — selector estilo Excel (buscar + lista)
+// ══════════════════════════════════════════════════════
+const _CB = {};
+
+function initCombobox(selId, placeholder){
+  const sel = document.getElementById(selId);
+  if(!sel || _CB[selId]) return;
+  sel.style.display = 'none';
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;';
+  sel.parentNode.insertBefore(wrap, sel);
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.autocomplete = 'off';
+  inp.placeholder = placeholder || 'Buscar...';
+  inp.className = 'input-base w-full';
+  inp.style.paddingRight = '1.8rem';
+  wrap.appendChild(inp);
+
+  const chev = document.createElement('span');
+  chev.textContent = '▾';
+  chev.style.cssText = 'position:absolute;right:.55rem;top:50%;transform:translateY(-50%);color:#9ca3af;pointer-events:none;font-size:.85rem;line-height:1;';
+  wrap.appendChild(chev);
+
+  const drop = document.createElement('div');
+  drop.style.cssText = 'display:none;position:absolute;z-index:200;background:#fff;border:1px solid #d1d5db;border-radius:.75rem;box-shadow:0 8px 24px rgba(0,0,0,.13);width:100%;max-height:230px;overflow-y:auto;margin-top:3px;';
+  wrap.appendChild(drop);
+
+  const cb = { sel, inp, drop, wrap };
+  _CB[selId] = cb;
+
+  // Override value setter so code that does sel.value='' syncs the input
+  const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  Object.defineProperty(sel, 'value', {
+    get(){ return proto.get.call(this); },
+    set(v){
+      proto.set.call(this, v);
+      if(!v){ inp.value=''; return; }
+      const opt = Array.from(this.options).find(o=>o.value===String(v));
+      if(opt) inp.value = opt.textContent;
+    }
+  });
+
+  inp.addEventListener('focus', ()=>{ _cbOpen(selId); });
+  inp.addEventListener('click', ()=>{ _cbOpen(selId); });
+  inp.addEventListener('input', ()=>{ _cbRender(selId, inp.value); drop.style.display='block'; sel.value=''; });
+  inp.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){ _cbClose(selId); inp.blur(); }
+    if(e.key==='ArrowDown'){ e.preventDefault(); const li=drop.querySelector('li'); if(li) li.focus(); }
+    if(e.key==='Enter'){ const li=drop.querySelector('li.cb-focused')||drop.querySelector('li'); if(li) li.dispatchEvent(new MouseEvent('mousedown')); }
+  });
+  document.addEventListener('click', e=>{ if(!wrap.contains(e.target)) _cbClose(selId); }, true);
+}
+
+function _cbOpen(selId){
+  const cb=_CB[selId]; if(!cb) return;
+  _cbRender(selId, cb.inp.value);
+  cb.drop.style.display='block';
+}
+
+function _cbClose(selId){
+  const cb=_CB[selId]; if(!cb) return;
+  cb.drop.style.display='none';
+  // If input doesn't match current value, restore it
+  const sel=cb.sel;
+  if(!sel.value){ cb.inp.value=''; return; }
+  const opt=Array.from(sel.options).find(o=>o.value===sel.value);
+  if(opt && norm(opt.textContent)!==norm(cb.inp.value)) cb.inp.value=opt.textContent;
+}
+
+function _cbRefresh(selId){
+  const cb=_CB[selId]; if(!cb) return;
+  const sel=cb.sel;
+  const opt=Array.from(sel.options).find(o=>o.value===sel.value);
+  cb.inp.value = (sel.value && opt) ? opt.textContent : '';
+  if(cb.drop.style.display!=='none') _cbRender(selId, cb.inp.value);
+}
+
+function _cbRender(selId, query){
+  const cb=_CB[selId]; if(!cb) return;
+  const q=norm(query||'');
+  const drop=cb.drop;
+  const opts=Array.from(cb.sel.options).filter(o=>o.value);
+  drop.innerHTML='';
+  let n=0;
+  opts.forEach(opt=>{
+    if(q && !norm(opt.textContent).includes(q)) return;
+    const li=document.createElement('li');
+    li.tabIndex=0;
+    li.style.cssText='list-style:none;padding:.45rem .8rem;cursor:pointer;font-size:.875rem;border-bottom:1px solid #f3f4f6;';
+    li.textContent=opt.textContent;
+    li.onmouseenter=()=>{ li.style.background='#f0fdf4'; };
+    li.onmouseleave=()=>{ li.style.background=''; };
+    li.addEventListener('mousedown', e=>{
+      e.preventDefault();
+      cb.sel.value=opt.value;
+      cb.inp.value=opt.textContent;
+      _cbClose(selId);
+      cb.sel.dispatchEvent(new Event('change'));
+    });
+    li.addEventListener('keydown', e=>{
+      if(e.key==='Enter') li.dispatchEvent(new MouseEvent('mousedown'));
+      if(e.key==='ArrowDown'){ e.preventDefault(); const nx=li.nextSibling; if(nx) nx.focus(); }
+      if(e.key==='ArrowUp'){ e.preventDefault(); const pv=li.previousSibling; if(pv) pv.focus(); else cb.inp.focus(); }
+    });
+    drop.appendChild(li);
+    n++;
+  });
+  if(n===0){
+    const li=document.createElement('li');
+    li.style.cssText='list-style:none;padding:.45rem .8rem;font-size:.8rem;color:#9ca3af;';
+    li.textContent='Sin resultados';
+    drop.appendChild(li);
+  }
+}
+
+function _initAllComboboxes(){
+  initCombobox('entTrabajador','Buscar trabajador...');
+  initCombobox('entArticulo','Buscar artículo EPP...');
+  initCombobox('histArticulo','Filtrar por EPP...');
+  initCombobox('histTrabajador','Filtrar por trabajador...');
+  initCombobox('camArticulo','Buscar artículo...');
+  initCombobox('trpArticulo','Buscar artículo...');
+}
+
 // ══════════════════════════════════════════════════════
 // CARGAR APP
 // ══════════════════════════════════════════════════════
@@ -1191,6 +1320,7 @@ function loadApp(){
   }
 
   setScreen('scrApp');
+  setTimeout(_initAllComboboxes, 200);
   setupListeners();
 }
 
@@ -1681,6 +1811,7 @@ function refreshEntArticulo(bodega){
     }
   });
   if(prev) sel.value=prev;
+  _cbRefresh('entArticulo');
 }
 
 function getWorker(){
@@ -2181,16 +2312,16 @@ function onCamBodega(){
 function onCamArticulo(){ refreshCamStock(); }
 
 function refreshCamArticulo(bodega){
-  const q = norm((document.getElementById('camBuscarArt')||{}).value||'');
   const sel=document.getElementById('camArticulo');
   const prev=sel.value;
   sel.innerHTML='<option value="">Seleccionar artículo...</option>';
-  (S.stock[bodega]||[]).filter(it=> !q || norm(it.item).includes(q)).forEach(it=>{
+  (S.stock[bodega]||[]).forEach(it=>{
     const o=document.createElement('option');
     o.value=it.item+'|'+it.talla; o.textContent=it.item+(it.talla&&it.talla!=='-'?' — '+it.talla:'')+(` (Stock: ${it.stockActual})`);
     sel.appendChild(o);
   });
   if(prev) sel.value=prev;
+  _cbRefresh('camArticulo');
 }
 
 function filtrarCamArticulo(){
@@ -2271,6 +2402,7 @@ function updateHistFiltros(){
   artSel.innerHTML='<option value="">Todos los EPP</option>'+arts.map(a=>`<option value="${a}">${a}</option>`).join('');
   trabSel.innerHTML='<option value="">Todos los trabajadores</option>'+trabs.map(t=>`<option value="${t}">${t}</option>`).join('');
   artSel.value=prevArt; trabSel.value=prevTrab;
+  _cbRefresh('histArticulo'); _cbRefresh('histTrabajador');
 }
 
 function clearHistFiltros(){
@@ -2385,17 +2517,17 @@ function filtrarTrpArticulo(){
   _fillTrpArticulos(b,(document.getElementById('trpBuscarArt').value||'').trim());
 }
 function _fillTrpArticulos(bodega,busqueda){
-  const q=norm(busqueda);
   const sel=document.getElementById('trpArticulo');
   const prev=sel.value;
   sel.innerHTML='<option value="">Seleccionar artículo...</option>';
-  (S.stock[bodega]||[]).filter(it=>!q||norm(it.item).includes(q)).forEach(it=>{
+  (S.stock[bodega]||[]).forEach(it=>{
     const o=document.createElement('option');
     o.value=it.item+'|'+it.talla;
     o.textContent=it.item+(it.talla&&it.talla!=='-'?' — '+it.talla:'')+' (Stock: '+it.stockActual+')';
     sel.appendChild(o);
   });
   if(prev) sel.value=prev;
+  _cbRefresh('trpArticulo');
   onTrpArticulo();
 }
 function onTrpArticulo(){
@@ -2479,15 +2611,13 @@ async function clearHist(){
 // ══════════════════════════════════════════════════════
 // WORKER DROPDOWN
 // ══════════════════════════════════════════════════════
-function fillWorkerSel(bodega='', search=''){
+function fillWorkerSel(bodega=''){
   const sel=document.getElementById('entTrabajador'); if(!sel) return;
   const prev=sel.value;
-  const q=norm(search);
   sel.innerHTML='<option value="">Seleccionar trabajador...</option>';
   S.workers.forEach((w,i)=>{
-    if(w.activo===false) return;                          // ocultar inactivos
-    if(bodega && !sedeEnBodega(w.sede, bodega)) return;  // filtrar por bodega
-    if(q && !norm(w.nombre||'').includes(q)) return;     // filtrar por búsqueda
+    if(w.activo===false) return;
+    if(bodega && !sedeEnBodega(w.sede, bodega)) return;
     const o=document.createElement('option');
     o.value=i; o.textContent=`${w.nombre} (${w.cargo||'—'})`;
     sel.appendChild(o);
@@ -2496,12 +2626,12 @@ function fillWorkerSel(bodega='', search=''){
   oOtro.value='__otro__'; oOtro.textContent='⚠ Otro / Visita (ingreso manual)';
   sel.appendChild(oOtro);
   if(prev) sel.value=prev;
+  _cbRefresh('entTrabajador');
 }
 
 function filtrarTrabajador(){
   const b=document.getElementById('entBodega').value;
-  const q=document.getElementById('entBuscarTrab').value;
-  fillWorkerSel(b, q);
+  fillWorkerSel(b);
 }
 
 function sedeEnBodega(sede, bodega){
