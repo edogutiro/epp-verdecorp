@@ -1224,7 +1224,8 @@ function initCombobox(selId, placeholder){
 
 function _cbOpen(selId){
   const cb=_CB[selId]; if(!cb) return;
-  _cbRender(selId, cb.inp.value);
+  cb.inp.value='';      // limpia para buscar desde cero
+  _cbRender(selId,'');  // muestra TODAS las opciones al abrir
   cb.drop.style.display='block';
 }
 
@@ -1257,8 +1258,9 @@ function _cbRender(selId, query){
     if(q && !norm(opt.textContent).includes(q)) return;
     const li=document.createElement('li');
     li.tabIndex=0;
-    li.style.cssText='list-style:none;padding:.45rem .8rem;cursor:pointer;font-size:.875rem;border-bottom:1px solid #f3f4f6;';
-    li.textContent=opt.textContent;
+    const isSel=opt.value===cb.sel.value;
+    li.style.cssText='list-style:none;padding:.45rem .8rem;cursor:pointer;font-size:.875rem;border-bottom:1px solid #f3f4f6;'+(isSel?'background:#f0fdf4;font-weight:600;color:#166534;':'');
+    li.textContent=(isSel?'✓ ':'')+opt.textContent;
     li.onmouseenter=()=>{ li.style.background='#f0fdf4'; };
     li.onmouseleave=()=>{ li.style.background=''; };
     li.addEventListener('mousedown', e=>{
