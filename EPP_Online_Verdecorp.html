@@ -312,8 +312,9 @@
       </div>
       <!-- Inventario (todos los roles) -->
       <button id="inventarioToggleBtn" onclick="toggleInventario()"
-        class="hidden btn-primary bg-amber-600 hover:bg-amber-700 text-white text-xs">
+        class="hidden btn-primary bg-amber-600 hover:bg-amber-700 text-white text-xs relative">
         📦 Inventario
+        <span id="stockBajoBadge" class="hidden absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full min-w-[1.2rem] h-5 flex items-center justify-center px-1 leading-none shadow"></span>
       </button>
       <!-- Admin toggle -->
       <button id="adminToggleBtn" onclick="toggleAdmin()"
@@ -341,6 +342,9 @@
         <div class="px-5 py-3 border-b border-amber-100 bg-amber-50 flex items-center justify-between">
           <span class="text-amber-800 font-bold text-sm flex items-center gap-2">📦 Inventario Mensual</span>
           <span class="text-xs text-amber-600">Ingresa el conteo físico real para actualizar el stock</span>
+        </div>
+        <div id="invAlertBanner" class="hidden px-5 py-2.5 bg-red-50 border-b border-red-100">
+          <p id="invAlertText" class="text-red-700 text-xs font-semibold"></p>
         </div>
         <div class="p-4 space-y-4">
           <div class="flex gap-3 flex-wrap items-center">
@@ -806,7 +810,7 @@
             <span class="w-8 h-8 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center">📋</span>
             Historial y Trazabilidad
           </h3>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-2">
             <input type="text" id="histSearch" placeholder="Buscar..." class="input-base col-span-2 sm:col-span-1"
               oninput="renderHistorial()">
             <select id="histArticulo" onchange="renderHistorial()" class="input-base">
@@ -821,6 +825,22 @@
               <option value="ENTRADA">Solo Entradas de Camión</option>
               <option value="TRASPASO">Solo Traspasos</option>
             </select>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 mb-4">
+            <span class="text-xs text-gray-400 font-medium">Período:</span>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500">Desde</label>
+              <input type="date" id="histDesde" onchange="renderHistorial()" class="input-base text-sm py-1">
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500">Hasta</label>
+              <input type="date" id="histHasta" onchange="renderHistorial()" class="input-base text-sm py-1">
+            </div>
+            <div class="flex gap-2 ml-1">
+              <button onclick="_histSetPeriod(7)"  class="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-vc-100 hover:text-vc-700 text-gray-600 transition">7d</button>
+              <button onclick="_histSetPeriod(30)" class="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-vc-100 hover:text-vc-700 text-gray-600 transition">30d</button>
+              <button onclick="_histSetPeriod(90)" class="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-vc-100 hover:text-vc-700 text-gray-600 transition">90d</button>
+            </div>
           </div>
           <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
             <div class="flex items-center gap-3">
@@ -1413,6 +1433,29 @@ function teardownListeners(){
 // ══════════════════════════════════════════════════════
 // ON DATA UPDATES
 // ══════════════════════════════════════════════════════
+function _updateStockBadge(){
+  const badge=document.getElementById('stockBajoBadge');
+  const banner=document.getElementById('invAlertBanner');
+  const bannerText=document.getElementById('invAlertText');
+  if(!badge) return;
+  let count=0; const criticos=[];
+  const BODEGAS_LIST=['BULNES (1+3)','ROMERAL (Unificada)','ECOCORP'];
+  BODEGAS_LIST.forEach(b=>{
+    (S.stock[b]||[]).forEach(it=>{
+      if((it.stockCritico||0)>0 && (it.stockActual??0)<it.stockCritico){
+        count++; criticos.push(`${it.item}${it.talla&&it.talla!=='-'?' '+it.talla:''} (${b.split(' ')[0]}): ${it.stockActual??0}/${it.stockCritico}`);
+      }
+    });
+  });
+  if(count>0){
+    badge.textContent=count; badge.classList.remove('hidden');
+    if(banner&&bannerText){ bannerText.innerHTML='⚠ '+count+' artículo'+(count>1?'s':'')+' bajo stock crítico: <span class="font-normal">'+criticos.slice(0,5).join(' · ')+(criticos.length>5?' y '+(criticos.length-5)+' más':'')+'</span>'; banner.classList.remove('hidden'); }
+  } else {
+    badge.classList.add('hidden');
+    if(banner) banner.classList.add('hidden');
+  }
+}
+
 function onStockUpdated(){
   const hasData = BODEGAS.some(b=>S.stock[b].length>0);
   document.getElementById('operativeArea').classList.toggle('hidden',!hasData);
@@ -1427,6 +1470,7 @@ function onStockUpdated(){
   // Refresh inventario si está abierto
   const invPanel = document.getElementById('inventarioPanel');
   if(invPanel && !invPanel.classList.contains('hidden')) renderInventario();
+  _updateStockBadge();
 }
 
 function onWorkersUpdated(){
@@ -2398,7 +2442,14 @@ function updateHistFiltros(){
 }
 
 function clearHistFiltros(){
-  ['histSearch','histArticulo','histTrabajador','histTipo'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['histSearch','histArticulo','histTrabajador','histTipo','histDesde','histHasta'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  renderHistorial();
+}
+function _histSetPeriod(days){
+  const hoy=new Date(); const desde=new Date(); desde.setDate(hoy.getDate()-days);
+  const fmt=d=>d.toISOString().slice(0,10);
+  const de=document.getElementById('histDesde'); const ha=document.getElementById('histHasta');
+  if(de) de.value=fmt(desde); if(ha) ha.value=fmt(hoy);
   renderHistorial();
 }
 
@@ -2408,11 +2459,15 @@ function renderHistorial(){
   const trab=document.getElementById('histTrabajador')?.value||'';
   const tipo=document.getElementById('histTipo')?.value||'';
 
+  const desde=document.getElementById('histDesde')?.value||'';
+  const hasta=document.getElementById('histHasta')?.value||'';
   let items=[...S.hist];
   if(txt) items=items.filter(h=>norm(h.item).includes(txt)||norm(h.trabajador).includes(txt)||norm(h.bodega).includes(txt));
   if(art) items=items.filter(h=>h.item===art);
   if(trab) items=items.filter(h=>h.trabajador===trab);
   if(tipo) items=items.filter(h=>h.tipo===tipo);
+  if(desde){ const d=new Date(desde); d.setHours(0,0,0,0); items=items.filter(h=>{ const fh=h.fecha?.toDate?h.fecha.toDate():new Date(h.fecha||0); return fh>=d; }); }
+  if(hasta){ const d=new Date(hasta); d.setHours(23,59,59,999); items=items.filter(h=>{ const fh=h.fecha?.toDate?h.fecha.toDate():new Date(h.fecha||0); return fh<=d; }); }
 
   const tbody=document.getElementById('histBody');
   if(!tbody) return;
