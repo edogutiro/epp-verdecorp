@@ -1205,7 +1205,7 @@ function initCombobox(selId, placeholder){
     get(){ return proto.get.call(this); },
     set(v){
       proto.set.call(this, v);
-      if(!v){ inp.value=''; return; }
+      if(!v){ if(drop.style.display==='none') inp.value=''; return; }
       const opt = Array.from(this.options).find(o=>o.value===String(v));
       if(opt) inp.value = opt.textContent;
     }
